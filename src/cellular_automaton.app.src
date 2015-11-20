@@ -1,0 +1,12 @@
+{application, cellular_automaton,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { cellular_automaton_app, []}},
+  {env, []}
+ ]}.

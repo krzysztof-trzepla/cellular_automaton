@@ -22,7 +22,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
     code_change/3]).
 
--record(state, {}).
+-record(state, {position, workers}).
 
 %%%===================================================================
 %%% API
@@ -36,16 +36,8 @@
 -spec start_link() ->
     {ok, Pid :: pid()} | ignore | {error, Reason :: term()}.
 start_link() ->
-    Node = node(),
-    case application:get_env(?APPLICATION_NAME, cellular_manager_node) of
-        {ok, Node} ->
-            ?info("Starting cellular manager on node ~p", [Node]),
-            gen_server:start_link({global, ?CELLULAR_MANAGER_NAME}, ?MODULE, [], []);
-        {ok, _} ->
-            ignore;
-        undefined ->
-            {error, "Cellular manager node not configured."}
-    end.
+    ?info("Starting cellular manager on node ~p.", [node()]),
+    gen_server:start_link({local, ?CELLULAR_MANAGER_NAME}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -61,7 +53,11 @@ start_link() ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore.
 init([]) ->
-    {ok, #state{}}.
+    {ok, Attempts} = application:get_env(neighbours_connection_attempts),
+    Nodes = get_neighbours(),
+    ?info("Neighbours: ~p", [Nodes]),
+    ok = connect_with_neighbours(Nodes, Attempts),
+    {ok, #state{workers = start_cellular_workers()}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -134,3 +130,50 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+
+
+connect_with_neighbours(_, 0) ->
+    {error, "Attempts limit exceeded."};
+connect_with_neighbours(Nodes, Attempts) ->
+    ?info("Connecting with neighbours."),
+    {ok, Delay} = application:get_env(neighbours_connection_retry_delay),
+    BadNodes = lists:foldl(fun(Node, BadNodesAcc) ->
+        case net_kernel:connect(Node) of
+            true ->
+                ?info("Successfully connected with neighbour ~p.", [Node]),
+                BadNodesAcc;
+            Other ->
+                ?error("Cannot connect with neighbour ~p due to: ~p. "
+                "Reconnecting in ~p seconds.", [Node, Other, Delay]),
+                [Node | BadNodesAcc]
+        end
+    end, [], Nodes),
+    case BadNodes of
+        [] ->
+            ?info("Successfully connected with all neighbours."),
+            ok;
+        _ ->
+            timer:sleep(timer:seconds(Delay)),
+            connect_with_neighbours(BadNodes, Attempts - 1)
+    end.
+
+start_cellular_workers() ->
+    #{}.
+
+get_neighbours() ->
+    {ok, Nodes} = application:get_env(cellular_manager_nodes),
+    ?info("Nodes: ~p", [Nodes]),
+    Length = length(Nodes),
+    ?info("Length: ~p", [Length]),
+    Position = erlang:length(lists:takewhile(fun(Node) ->
+        Node =/= node()
+    end, Nodes)),
+    ?info("Position: ~p", [Position]),
+    ?info("Upper: ~p", [lists:nth((Position + 1) rem Length + 1, Nodes)]),
+    ?info("Lower: ~p", [lists:nth((Position + Length - 1) rem Length + 1, Nodes)]),
+    true = Position =< Length,
+    lists:filter(fun(Node) -> Node =/= node() end, [
+        lists:nth((Position + 1) rem Length + 1, Nodes),
+        lists:nth((Position + Length - 1) rem Length + 1, Nodes)
+    ]).

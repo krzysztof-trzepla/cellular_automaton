@@ -6,7 +6,7 @@ deps
 *.plt
 erl_crash.dump
 ebin
-rel/cellular_automaton
+rel/cellular_automaton*
 .concrete/DEV_MODE
 .rebar
 test/eunit_results

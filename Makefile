@@ -19,6 +19,22 @@ distclean: clean
 generate:
 	@cd rel && ${REBAR} generate
 
+dev:
+	@for i in 1 2 3; do \
+		echo "Creating rel/cellular_automaton_dev$$i"; \
+		cp -R rel/cellular_automaton rel/cellular_automaton_dev$$i; \
+		sed -i -e s/"'worker@127.0.0.1'"/"'worker1@127.0.0.1','worker2@127.0.0.1',\
+		'worker3@127.0.0.1'"/g rel/cellular_automaton_dev$$i/releases/1/sys.config; \
+		sed -i -e s/worker@127.0.0.1/worker$$i@127.0.0.1/g \
+		rel/cellular_automaton_dev$$i/releases/1/vm.args; \
+	done
+
+devclean:
+	@for i in 1 2 3; do \
+		echo "Removing rel/cellular_automaton_dev$$i"; \
+		rm -rf rel/cellular_automaton_dev$$i; \
+	done
+
 ##
 ## Release
 ##

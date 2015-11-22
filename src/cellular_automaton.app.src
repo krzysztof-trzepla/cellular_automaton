@@ -1,3 +1,13 @@
+%%%-------------------------------------------------------------------
+%%% @author Krzysztof Trzepla
+%%% @copyright (C) 2015 KI AGH
+%%% This software is released under the MIT license cited in 'LICENSE.txt'.
+%%% @end
+%%%-------------------------------------------------------------------
+%%% @doc
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 {application, cellular_automaton,
  [
   {description, ""},

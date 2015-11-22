@@ -8,14 +8,14 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(cellular_automaton_sup).
+-module(cellular_worker_sup).
 -author("Krzysztof Trzepla").
 -behaviour(supervisor).
 
 -include("cellular_automaton.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0, start_child/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -32,7 +32,16 @@
 -spec start_link() ->
     {ok, Pid :: pid()} | ignore | {error, Reason :: term()}.
 start_link() ->
-    supervisor:start_link(?MODULE, []).
+    supervisor:start_link({local, ?CELLULAR_WORKER_SUP_NAME}, ?MODULE, []).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts cellular worker supervised by cellular worker supervisor.
+%% @end
+%%--------------------------------------------------------------------
+-spec start_child() -> supervisor:startchild_ret().
+start_child() ->
+    supervisor:start_child(?CELLULAR_WORKER_SUP_NAME, []).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -51,9 +60,8 @@ start_link() ->
     {ok, {SupFlags :: supervisor:sup_flags(),
         [ChildSpec :: supervisor:child_spec()]}} | ignore.
 init([]) ->
-    {ok, {#{strategy => one_for_one, intensity => 1000, period => 3600}, [
-        cellular_manager_spec(),
-        cellular_worker_sup_spec()
+    {ok, {#{strategy => simple_one_for_one, intensity => 1000, period => 3600}, [
+        cellular_worker_spec()
     ]}}.
 
 %%%===================================================================
@@ -63,33 +71,16 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Returns supervisor child specification of cellular manager.
+%% Returns supervisor child specification of cellular worker.
 %% @end
 %%--------------------------------------------------------------------
--spec cellular_manager_spec() -> ChildSpec :: supervisor:child_spec().
-cellular_manager_spec() ->
+-spec cellular_worker_spec() -> ChildSpec :: supervisor:child_spec().
+cellular_worker_spec() ->
     #{
-        id => cellular_manager,
-        start => {cellular_manager, start_link, []},
+        id => cellular_worker,
+        start => {cellular_worker, start_link, []},
         restart => transient,
         shutdown => timer:seconds(10),
         type => worker,
-        modules => [cellular_manager]
-    }.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Returns supervisor child specification of cellular worker supervisor.
-%% @end
-%%--------------------------------------------------------------------
--spec cellular_worker_sup_spec() -> ChildSpec :: supervisor:child_spec().
-cellular_worker_sup_spec() ->
-    #{
-        id => cellular_worker_sup,
-        start => {cellular_worker_sup, start_link, []},
-        restart => permanent,
-        shutdown => timer:seconds(10),
-        type => supervisor,
-        modules => [cellular_worker_sup]
+        modules => [cellular_worker]
     }.

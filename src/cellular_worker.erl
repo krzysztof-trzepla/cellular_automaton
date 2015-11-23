@@ -10,23 +10,31 @@
 %%%-------------------------------------------------------------------
 -module(cellular_worker).
 -author("Krzysztof Trzepla").
-
 -behaviour(gen_fsm).
 
+-include("cellular_automaton.hrl").
+-include("cellular_logger.hrl").
+
 %% API
--export([start_link/0]).
+-export([start_link/2]).
 
 %% gen_fsm callbacks
--export([init/1,
-    state_name/2,
-    state_name/3,
-    handle_event/3,
-    handle_sync_event/4,
-    handle_info/3,
-    terminate/3,
+-export([init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3,
     code_change/4]).
 
--record(state, {}).
+%% gen_fsm states
+-export([initialize/2]).
+
+-type position() :: position().
+
+-record(state, {
+    horizontal_position :: position(),
+    vertical_position :: position(),
+    left_neighbour :: pid(),
+    right_neighbour :: pid(),
+    upper_neighbour :: pid(),
+    lower_neighbour :: pid()
+}).
 
 %%%===================================================================
 %%% API
@@ -40,9 +48,10 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() -> {ok, pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-    gen_fsm:start_link(?MODULE, [], []).
+-spec(start_link(HPos :: non_neg_integer(), VPos :: non_neg_integer()) ->
+    {ok, pid()} | ignore | {error, Reason :: term()}).
+start_link(VPos, HPos) ->
+    gen_fsm:start_link(?MODULE, [VPos, HPos], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -61,53 +70,11 @@ start_link() ->
     {ok, StateName :: atom(), StateData :: #state{}} |
     {ok, StateName :: atom(), StateData :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
-init([]) ->
-    {ok, state_name, #state{}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_event/2, the instance of this function with the same
-%% name as the current state name StateName is called to handle
-%% the event. It is also called if a timeout occurs.
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(state_name(Event :: term(), State :: #state{}) ->
-    {next_state, NextStateName :: atom(), NextState :: #state{}} |
-    {next_state, NextStateName :: atom(), NextState :: #state{},
-        timeout() | hibernate} |
-    {stop, Reason :: term(), NewState :: #state{}}).
-state_name(_Event, State) ->
-    {next_state, state_name, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_event/[2,3], the instance of this function with
-%% the same name as the current state name StateName is called to
-%% handle the event.
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(state_name(Event :: term(), From :: {pid(), term()},
-    State :: #state{}) ->
-    {next_state, NextStateName :: atom(), NextState :: #state{}} |
-    {next_state, NextStateName :: atom(), NextState :: #state{},
-        timeout() | hibernate} |
-    {reply, Reply, NextStateName :: atom(), NextState :: #state{}} |
-    {reply, Reply, NextStateName :: atom(), NextState :: #state{},
-        timeout() | hibernate} |
-    {stop, Reason :: normal | term(), NewState :: #state{}} |
-    {stop, Reason :: normal | term(), Reply :: term(),
-        NewState :: #state{}}).
-state_name(_Event, _From, State) ->
-    Reply = ok,
-    {reply, Reply, state_name, State}.
+init([VPos, HPos]) ->
+    {ok, initialize, #state{
+        vertical_position = VPos,
+        horizontal_position = HPos
+    }, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -197,5 +164,50 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
 %%%===================================================================
+%%% gen_fsm states
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% There should be one instance of this function for each possible
+%% state name. Whenever a gen_fsm receives an event sent using
+%% gen_fsm:send_event/2, the instance of this function with the same
+%% name as the current state name StateName is called to handle
+%% the event. It is also called if a timeout occurs.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec initialize(Event :: term(), State :: #state{}) ->
+    {next_state, NextStateName :: atom(), NextState :: #state{}}.
+initialize(timeout, #state{vertical_position = VPos,
+    horizontal_position = HPos} = State) ->
+    Neighbours = gen_server:call(?CELLULAR_MANAGER_NAME,
+        {get_worker_neighbours, HPos, VPos}),
+    {next_state, print, State#state{
+        left_neighbour = get_neighbour(left, Neighbours),
+        right_neighbour = get_neighbour(right, Neighbours),
+        upper_neighbour = get_neighbour(upper, Neighbours),
+        lower_neighbour = get_neighbour(lower, Neighbours)
+    }}.
+
+%%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Returns worker neighbour by tag.
+%% @end
+%%--------------------------------------------------------------------
+-spec get_neighbour(Tag :: left | right | upper | lower,
+    Neighbours :: proplists:proplist()) -> Pid :: pid().
+get_neighbour(Tag, Neighbours) ->
+    case proplists:get_value(Tag, Neighbours) of
+        {ok, Pid} ->
+            Pid;
+        {redirect, {Node, VPos, HPos}} ->
+            {ok, Pid} = gen_server:call({?CELLULAR_MANAGER_NAME, Node},
+                {get_worker, VPos, HPos}),
+            Pid
+    end.

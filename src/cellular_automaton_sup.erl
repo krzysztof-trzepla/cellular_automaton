@@ -52,8 +52,8 @@ start_link() ->
         [ChildSpec :: supervisor:child_spec()]}} | ignore.
 init([]) ->
     {ok, {#{strategy => one_for_one, intensity => 1000, period => 3600}, [
-        cellular_manager_spec(),
-        cellular_worker_sup_spec()
+        cellular_worker_sup_spec(),
+        cellular_manager_spec()
     ]}}.
 
 %%%===================================================================

@@ -13,6 +13,7 @@
 -ifndef(CELLULAR_AUTOMATON).
 -define(CELLULAR_AUTOMATON, true).
 
+-define(APPLICATION_NAME, cellular_automaton).
 -define(CELLULAR_MANAGER_NAME, cellular_manager).
 -define(CELLULAR_WORKER_SUP_NAME, cellular_worker_sup).
 

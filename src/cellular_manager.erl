@@ -17,24 +17,24 @@
 
 %% API
 -export([start_link/0]).
--export([get_position/0]).
--export([get_lower_neighbour/1, get_upper_neighbour/1]).
--export([get_horizontal_board_range/0, get_vertical_board_range/1]).
--export([get_left_worker_neighbour/3, get_right_worker_neighbour/3,
-    get_upper_worker_neighbour/4, get_lower_worker_neighbour/4]).
+-export([get_section_id/2]).
+-export([get_upper_cellular_manager_node/2, get_lower_cellular_manager_node/2]).
+-export([get_section_horizontal_range/0, get_section_vertical_range/2]).
+-export([get_worker_neighbours/5]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
     code_change/3]).
 
--type position() :: position().
--type coordinate() :: {position(), position()}.
--type worker_map() :: #{coordinate() => pid()}.
--type range() :: {position(), position()}.
+-type section_id() :: non_neg_integer().
+-type worker_map() :: #{cellular_automaton:position() => pid()}.
+-type range() :: {non_neg_integer(), non_neg_integer()}.
 
 -record(state, {
-    upper_neighbour :: node(),
-    lower_neighbour :: node(),
-    workers :: worker_map()
+    upper_cellular_manager :: node(),
+    lower_cellular_manager :: node(),
+    section_horizontal_range :: range(),
+    section_vertical_range :: range(),
+    workers = #{} :: worker_map()
 }).
 
 %%%===================================================================
@@ -54,134 +54,109 @@ start_link() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns this node position in a list of configured cellular manager nodes.
+%% Returns cellular manager section ID that is defined by its position in
+%% a sorted list of configured cellular manager nodes.
 %% @end
 %%--------------------------------------------------------------------
--spec get_position() -> Position :: position().
-get_position() ->
-    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
-    {Position, _} = lists:foldl(fun
-        (Node, {undefined, N}) when Node =:= node() -> {N, N + 1};
-        (_, {P, N}) -> {P, N + 1}
-    end, {undefined, 0}, Nodes),
-    case Position of
+-spec get_section_id(Node :: node(), Nodes :: [node()]) ->
+    SectionId :: section_id().
+get_section_id(Node, Nodes) ->
+    {SectionId, _} = lists:foldl(fun
+        (Name, {undefined, N}) when Name =:= Node -> {N, N + 1};
+        (_, {Id, N}) -> {Id, N + 1}
+    end, {undefined, 0}, lists:sort(Nodes)),
+    case SectionId of
         undefined ->
             throw("Node not found among configured cellular manager nodes.");
         _ ->
-            Position
+            SectionId
     end.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns this node lower neighbour, that is node that directly follows this
-%% node in a circular list of configured cellular manager nodes.
+%% Returns upper cellular manager node, that is node that directly follows this
+%% node in a sorted circular list of configured cellular manager nodes.
 %% @end
 %%--------------------------------------------------------------------
--spec get_lower_neighbour(Position :: position()) -> Node :: node().
-get_lower_neighbour(Position) ->
-    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
-    lists:nth((Position + 1) rem length(Nodes) + 1, Nodes).
+-spec get_upper_cellular_manager_node(SectionId :: section_id(), Nodes :: [node()]) ->
+    Node :: node().
+get_upper_cellular_manager_node(SectionId, Nodes) ->
+    lists:nth((SectionId + 1) rem length(Nodes) + 1, lists:sort(Nodes)).
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns this node upper neighbour, that is node that directly proceeds this
-%% node in a circular list of configured cellular manager nodes.
+%% Returns lower cellular manager node, that is node that directly proceeds this
+%% node in a sorted circular list of configured cellular manager nodes.
 %% @end
 %%--------------------------------------------------------------------
--spec get_upper_neighbour(Position :: position()) -> Node :: node().
-get_upper_neighbour(Position) ->
-    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
-    lists:nth((Position + length(Nodes) - 1) rem length(Nodes) + 1, Nodes).
+-spec get_lower_cellular_manager_node(SectionId :: section_id(), Nodes :: [node()]) ->
+    Node :: node().
+get_lower_cellular_manager_node(SectionId, Nodes) ->
+    lists:nth((SectionId + length(Nodes) - 1) rem length(Nodes) + 1, lists:sort(Nodes)).
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns horizontal range of tiles that are associated with this cellular manager.
+%% Returns horizontal range of tiles that is associated with cellular manager
+%% section.
 %% @end
 %%--------------------------------------------------------------------
--spec get_horizontal_board_range() -> HorizontalRange :: range().
-get_horizontal_board_range() ->
+-spec get_section_horizontal_range() -> Range :: range().
+get_section_horizontal_range() ->
     {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
     {0, Width - 1}.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns vertical range of tiles that are associated with this cellular manager.
+%% Returns vertical range of tiles that is associated with cellular manager
+%% section.
 %% @end
 %%--------------------------------------------------------------------
--spec get_vertical_board_range(Position :: position()) ->
-    VerticalRange :: range().
-get_vertical_board_range(Position) ->
-    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
+-spec get_section_vertical_range(SectionId :: section_id(), Nodes :: [node()]) ->
+    Range :: range().
+get_section_vertical_range(SectionId, Nodes) ->
     NodesLen = erlang:length(Nodes),
     {ok, Height} = application:get_env(?APPLICATION_NAME, board_height),
     TilesPerNode = Height div NodesLen,
     AdditionalTiles = Height rem NodesLen,
-    case Position < AdditionalTiles of
+    case SectionId < AdditionalTiles of
         true ->
-            VBegin = Position * TilesPerNode + Position,
+            VBegin = SectionId * TilesPerNode + SectionId,
             {VBegin, VBegin + TilesPerNode};
         false ->
-            VBegin = Position * TilesPerNode + AdditionalTiles,
+            VBegin = SectionId * TilesPerNode + AdditionalTiles,
             {VBegin, VBegin + TilesPerNode - 1}
     end.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Returns left worker neighbour.
+%%
 %% @end
 %%--------------------------------------------------------------------
--spec get_left_worker_neighbour(VPos :: position(), HPos :: position(),
-    Workers :: worker_map()) -> {ok, Pid :: pid()}.
-get_left_worker_neighbour(VPos, HPos, Workers) ->
-    {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
-    maps:find({VPos, (HPos + Width - 1) rem Width}, Workers).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Returns right worker neighbour.
-%% @end
-%%--------------------------------------------------------------------
--spec get_right_worker_neighbour(VPos :: position(), HPos :: position(),
-    Workers :: worker_map()) -> {ok, Pid :: pid()}.
-get_right_worker_neighbour(VPos, HPos, Workers) ->
-    {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
-    maps:find({VPos, (HPos + 1) rem Width}, Workers).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Returns upper worker neighbour if its position is in worker map or
-%% redirection details to another cellular manager with new position.
-%% @end
-%%--------------------------------------------------------------------
--spec get_upper_worker_neighbour(VPos :: position(), HPos :: position(),
-    UNeighbour :: node(), Workers :: worker_map()) ->
-    {ok, Pid :: pid()} | {redirect, {Node :: node(), NewVPos :: position(),
-        NewHPos :: position()}}.
-get_upper_worker_neighbour(VPos, HPos, UNeighbour, Workers) ->
+-spec get_worker_neighbours(X :: cellular_automaton:coordinate(),
+    Y :: cellular_automaton:coordinate(), Workers :: worker_map(),
+    UpperCellMan :: node(), LowerCellMan :: node()) ->
+    [{ok, {Tag :: cellular_automaton:tag(), Pid :: pid()}} | {redirect,
+        {Node :: node(), Tag :: cellular_automaton:tag(),
+            Position :: cellular_automaton:position()}}].
+get_worker_neighbours(X, Y, Workers, UpperCellMan, LowerCellMan) ->
+    {ok, Neighbours} = application:get_env(?APPLICATION_NAME, worker_neighbours),
     {ok, Height} = application:get_env(?APPLICATION_NAME, board_height),
-    NeighbourVPos = (VPos + Height - 1) rem Height,
-    case maps:find({NeighbourVPos, HPos}, Workers) of
-        {ok, Pid} -> {ok, Pid};
-        error -> {redirect, {UNeighbour, NeighbourVPos, HPos}}
-    end.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Returns lower worker neighbour if its position is in worker map or
-%% redirection details to another cellular manager with new position.
-%% @end
-%%--------------------------------------------------------------------
--spec get_lower_worker_neighbour(VPos :: position(), HPos :: position(),
-    LNeighbour :: node(), Workers :: worker_map()) ->
-    {ok, Pid :: pid()} | {redirect, {Node :: node(), NewVPos :: position(),
-        NewHPos :: position()}}.
-get_lower_worker_neighbour(VPos, HPos, LNeighbour, Workers) ->
-    {ok, Height} = application:get_env(?APPLICATION_NAME, board_height),
-    NeighbourVPos = (VPos + 1) rem Height,
-    case maps:find({NeighbourVPos, HPos}, Workers) of
-        {ok, Pid} -> {ok, Pid};
-        error -> {redirect, {LNeighbour, NeighbourVPos, HPos}}
-    end.
+    {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
+    lists:map(fun({Tag, {Dx, Dy}}) ->
+        NewX = (X + Dx + Width) rem Width,
+        NewY = (Y + Dy + Height) rem Height,
+        case maps:find({NewX, NewY}, Workers) of
+            {ok, Pid} ->
+                {ok, {Tag, Pid}};
+            error ->
+                case {Dy > 0, Dy < 0} of
+                    {true, false} ->
+                        {redirect, {UpperCellMan, Tag, {NewX, NewY}}};
+                    {false, true} ->
+                        {redirect, {LowerCellMan, Tag, {NewX, NewY}}}
+                end
+        end
+    end, Neighbours).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -197,17 +172,18 @@ get_lower_worker_neighbour(VPos, HPos, LNeighbour, Workers) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore.
 init([]) ->
-    {ok, Attempts} = application:get_env(?APPLICATION_NAME, neighbours_connection_attempts),
-    Position = get_position(),
-    UpperNeighbour = get_upper_neighbour(Position),
-    LowerNeighbour = get_lower_neighbour(Position),
-    connect_with_neighbours([UpperNeighbour, LowerNeighbour], Attempts),
-    HorizontalRange = get_horizontal_board_range(),
-    VerticalRange = get_vertical_board_range(Position),
+    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
+    SectionId = get_section_id(node(), Nodes),
+    LowerCellMan = get_lower_cellular_manager_node(SectionId, Nodes),
+    UpperCellMan = get_upper_cellular_manager_node(SectionId, Nodes),
+    connect_with_cellular_managers(Nodes),
+    HRange = get_section_horizontal_range(),
+    VRange = get_section_vertical_range(SectionId, Nodes),
     {ok, #state{
-        upper_neighbour = UpperNeighbour,
-        lower_neighbour = LowerNeighbour,
-        workers = start_cellular_workers(HorizontalRange, VerticalRange)
+        lower_cellular_manager = LowerCellMan,
+        upper_cellular_manager = UpperCellMan,
+        section_horizontal_range = HRange,
+        section_vertical_range = VRange
     }, 0}.
 
 %%--------------------------------------------------------------------
@@ -224,18 +200,14 @@ init([]) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}.
-handle_call({get_worker, VPos, HPos}, _, #state{workers = Workers} = State) ->
-    {reply, maps:find({VPos, HPos}, Workers), State};
-handle_call({get_worker_neighbours, HPos, VPos}, _, #state{
-    upper_neighbour = UNeighbour,
-    lower_neighbour = LNeighbour,
-    workers = Workers} = State) ->
-    {reply, [
-        {left, get_left_worker_neighbour(VPos, HPos, Workers)},
-        {right, get_right_worker_neighbour(VPos, HPos, Workers)},
-        {upper, get_upper_worker_neighbour(VPos, HPos, UNeighbour, Workers)},
-        {lower, get_lower_worker_neighbour(VPos, HPos, LNeighbour, Workers)}
-    ], State};
+handle_call({get_worker, X, Y}, _, #state{workers = Workers} = State) ->
+    {reply, maps:find({X, Y}, Workers), State};
+handle_call({get_worker_neighbours, X, Y}, _, #state{
+    upper_cellular_manager = UpperCellMan,
+    lower_cellular_manager = LowerCellMan,
+    workers = Workers
+} = State) ->
+    {reply, get_worker_neighbours(X, Y, Workers, UpperCellMan, LowerCellMan), State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -249,6 +221,24 @@ handle_call(_Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}.
+handle_cast(start_simulation, State) ->
+    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
+    lists:foreach(fun(Node) ->
+        gen_server:cast({?CELLULAR_MANAGER_NAME, Node}, start_cellular_workers)
+    end, Nodes),
+    {noreply, State};
+handle_cast(stop_simulation, State) ->
+    {ok, Nodes} = application:get_env(?APPLICATION_NAME, cellular_manager_nodes),
+    lists:foreach(fun(Node) ->
+        gen_server:cast({?CELLULAR_MANAGER_NAME, Node}, stop_cellular_workers)
+    end, Nodes),
+    {noreply, State};
+handle_cast(start_cellular_workers, #state{section_horizontal_range = HRange,
+    section_vertical_range = VRange} = State) ->
+    {noreply, State#state{workers = start_cellular_workers(HRange, VRange)}};
+handle_cast(stop_cellular_workers, #state{workers = Workers} = State) ->
+    stop_cellular_workers(Workers),
+    {noreply, State#state{workers = #{}}};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -297,37 +287,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Connects this node with a list of nodes provided as first argument. Returns 
-%% 'ok' if connection to all nodes can be established successfully within specified 
-%% number of attempts, otherwise error.
+%% Connects this node with provided nodes.
 %% @end
 %%--------------------------------------------------------------------
--spec connect_with_neighbours(Nodes :: [node()], Attempts :: position()) ->
-    ok | no_return().
-connect_with_neighbours(_, 0) ->
-    throw("Connection attempts limit exceeded.");
-connect_with_neighbours(Nodes, Attempts) ->
-    ?info("Connecting with neighbours."),
-    {ok, Delay} = application:get_env(?APPLICATION_NAME, neighbours_connection_retry_delay),
-    BadNodes = lists:foldl(fun(Node, BadNodesAcc) ->
+-spec connect_with_cellular_managers(Nodes :: [node()]) -> ok.
+connect_with_cellular_managers(Nodes) ->
+    lists:foreach(fun(Node) ->
         case net_kernel:connect(Node) of
             true ->
-                ?info("Successfully connected with neighbour ~p.", [Node]),
-                BadNodesAcc;
-            Other ->
-                ?error("Cannot connect with neighbour ~p due to: ~p. "
-                "Reconnecting in ~p seconds.", [Node, Other, Delay]),
-                [Node | BadNodesAcc]
+                ?info("Successfully connected with cellular manager ~p.", [Node]);
+            _ -> ?warning("Cannot connect with cellular manager ~p.", [Node])
         end
-    end, [], Nodes),
-    case BadNodes of
-        [] ->
-            ?info("Successfully connected with all neighbours."),
-            ok;
-        _ ->
-            timer:sleep(timer:seconds(Delay)),
-            connect_with_neighbours(BadNodes, Attempts - 1)
-    end.
+    end, Nodes).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -339,9 +310,22 @@ connect_with_neighbours(Nodes, Attempts) ->
     WorkersMap :: #{}.
 start_cellular_workers({HBegin, HEnd}, {VBegin, VEnd}) ->
     ?info("Starting cellular workers."),
-    lists:foldl(fun(VPos, Map) ->
-        lists:foldl(fun(HPos, PartialMap) ->
-            {ok, Pid} = cellular_worker_sup:start_child(VPos, HPos),
-            maps:put({VPos, HPos}, Pid, PartialMap)
+    lists:foldl(fun(Y, Map) ->
+        lists:foldl(fun(X, PartialMap) ->
+            {ok, Pid} = cellular_worker_sup:start_child(X, Y),
+            maps:put({X, Y}, Pid, PartialMap)
         end, Map, lists:seq(HBegin, HEnd))
     end, #{}, lists:seq(VBegin, VEnd)).
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Stops cellular workers.
+%% @end
+%%--------------------------------------------------------------------
+-spec stop_cellular_workers(Workers :: worker_map()) -> ok.
+stop_cellular_workers(Workers) ->
+    ?info("Stopping cellular workers."),
+    maps:fold(fun(_, Pid, _) ->
+        ok = cellular_worker_sup:stop_child(Pid)
+    end, ok, Workers).

@@ -8,23 +8,30 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(cellular_automaton).
+-module(langton_ant).
 -author("Krzysztof Trzepla").
+-behaviour(cellular_worker_behaviour).
 
--include("cellular_automaton.hrl").
+-include("cellular_logger.hrl").
 
-%% API
--export([start_simulation/0, stop_simulation/0]).
+%% Callbacks
+-export([init/0, compute_next_state/2, merge_state/2, merge_neighbour_state/5]).
 
 %%%===================================================================
-%%% API
+%%% Cellular worker behaviour callbacks
 %%%===================================================================
 
-start_simulation() ->
-    gen_server:cast(?CELLULAR_MANAGER_NAME, start_simulation).
+init() ->
+    #{}.
 
-stop_simulation() ->
-    gen_server:cast(?CELLULAR_MANAGER_NAME, stop_simulation).
+compute_next_state(State, NbrsStates) ->
+    {State, NbrsStates}.
+
+merge_state(State, _NextState) ->
+    State.
+
+merge_neighbour_state(_NbrTag, State, NbrState, _NextState, _NextNbrState) ->
+    {State, NbrState}.
 
 %%%===================================================================
 %%% Internal functions

@@ -88,7 +88,7 @@ init([]) ->
 cellular_worker_spec() ->
     #{
         id => cellular_worker,
-        start => {cellular_worker, start_link, []},
+        start => {cellular_worker2, start_link, []},
         restart => transient,
         shutdown => timer:seconds(10),
         type => worker,

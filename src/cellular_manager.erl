@@ -20,13 +20,12 @@
 -export([get_section_id/2]).
 -export([get_upper_cellular_manager_node/2, get_lower_cellular_manager_node/2]).
 -export([get_section_horizontal_range/0, get_section_vertical_range/2]).
--export([get_worker_neighbours/5]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
     code_change/3]).
 
 -type section_id() :: non_neg_integer().
--type worker_map() :: #{cellular_automaton:position() => pid()}.
+-type workers() :: #{cellular_automaton:position() => pid()}.
 -type range() :: {non_neg_integer(), non_neg_integer()}.
 
 -record(state, {
@@ -34,7 +33,7 @@
     lower_cellular_manager :: node(),
     section_horizontal_range :: range(),
     section_vertical_range :: range(),
-    workers = #{} :: worker_map()
+    workers = #{} :: workers()
 }).
 
 %%%===================================================================
@@ -127,37 +126,6 @@ get_section_vertical_range(SectionId, Nodes) ->
             {VBegin, VBegin + TilesPerNode - 1}
     end.
 
-%%--------------------------------------------------------------------
-%% @doc
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec get_worker_neighbours(X :: cellular_automaton:coordinate(),
-    Y :: cellular_automaton:coordinate(), Workers :: worker_map(),
-    UpperCellMan :: node(), LowerCellMan :: node()) ->
-    [{ok, {Tag :: cellular_automaton:tag(), Pid :: pid()}} | {redirect,
-        {Node :: node(), Tag :: cellular_automaton:tag(),
-            Position :: cellular_automaton:position()}}].
-get_worker_neighbours(X, Y, Workers, UpperCellMan, LowerCellMan) ->
-    {ok, Neighbours} = application:get_env(?APPLICATION_NAME, worker_neighbours),
-    {ok, Height} = application:get_env(?APPLICATION_NAME, board_height),
-    {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
-    lists:map(fun({Tag, {Dx, Dy}}) ->
-        NewX = (X + Dx + Width) rem Width,
-        NewY = (Y + Dy + Height) rem Height,
-        case maps:find({NewX, NewY}, Workers) of
-            {ok, Pid} ->
-                {ok, {Tag, Pid}};
-            error ->
-                case {Dy > 0, Dy < 0} of
-                    {true, false} ->
-                        {redirect, {UpperCellMan, Tag, {NewX, NewY}}};
-                    {false, true} ->
-                        {redirect, {LowerCellMan, Tag, {NewX, NewY}}}
-                end
-        end
-    end, Neighbours).
-
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -184,7 +152,7 @@ init([]) ->
         upper_cellular_manager = UpperCellMan,
         section_horizontal_range = HRange,
         section_vertical_range = VRange
-    }, 0}.
+    }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -200,14 +168,17 @@ init([]) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}.
-handle_call({get_worker, X, Y}, _, #state{workers = Workers} = State) ->
-    {reply, maps:find({X, Y}, Workers), State};
-handle_call({get_worker_neighbours, X, Y}, _, #state{
-    upper_cellular_manager = UpperCellMan,
-    lower_cellular_manager = LowerCellMan,
-    workers = Workers
-} = State) ->
-    {reply, get_worker_neighbours(X, Y, Workers, UpperCellMan, LowerCellMan), State};
+handle_call({get_worker, {X, Y}}, _, #state{section_vertical_range = VRange,
+    upper_cellular_manager = UpperCellMan, lower_cellular_manager = LowerCellMan,
+    workers = Workers} = State) ->
+    {ok, Height} = application:get_env(?APPLICATION_NAME, board_height),
+    {ok, Width} = application:get_env(?APPLICATION_NAME, board_width),
+    NewPos = {(X + Width) rem Width, (Y + Height) rem Height},
+    case in_section_vertical_range(Y, VRange) of
+        true -> {reply, maps:find(NewPos, Workers), State};
+        below -> {reply, {redirect, LowerCellMan, NewPos}, State};
+        above -> {reply, {redirect, UpperCellMan, NewPos}, State}
+    end;
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -323,9 +294,22 @@ start_cellular_workers({HBegin, HEnd}, {VBegin, VEnd}) ->
 %% Stops cellular workers.
 %% @end
 %%--------------------------------------------------------------------
--spec stop_cellular_workers(Workers :: worker_map()) -> ok.
+-spec stop_cellular_workers(Workers :: workers()) -> ok.
 stop_cellular_workers(Workers) ->
     ?info("Stopping cellular workers."),
     maps:fold(fun(_, Pid, _) ->
         ok = cellular_worker_sup:stop_child(Pid)
     end, ok, Workers).
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Returns relative position of Y coordinate to cellular manager section
+%% vertical range.
+%% @end
+%%--------------------------------------------------------------------
+-spec in_section_vertical_range(Y :: cellular_worker:coordinate(), VRange :: range()) ->
+    below | above | true.
+in_section_vertical_range(Y, {VBegin, _}) when Y < VBegin -> below;
+in_section_vertical_range(Y, {_, VEnd}) when Y > VEnd -> above;
+in_section_vertical_range(_, _) -> true.

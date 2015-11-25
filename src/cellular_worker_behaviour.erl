@@ -17,12 +17,12 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% This callback is called at the beginning of simulation by cellular
-%% worker in order to initialize its state.
+%% This callback is called by cellular worker before each step of simulation
+%% in order to initialize its state.
 %% @end
 %%--------------------------------------------------------------------
--callback init() ->
-    State :: cellular_worker:state().
+-callback init_step(Step :: cellular_worker:step(), State :: cellular_worker:state()) ->
+    NewState :: cellular_worker:state().
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -45,6 +45,7 @@
 %% @end
 %%--------------------------------------------------------------------
 -callback merge_state(
+    NbrTag :: cellular_worker:neighbour_tag(),
     State :: cellular_worker:state(),
     NextState :: cellular_worker:state()
 ) ->

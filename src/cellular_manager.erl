@@ -288,7 +288,8 @@ start_cellular_workers({XBegin, XEnd}, {YBegin, YEnd}) ->
     ?info("Starting cellular workers."),
     lists:foldl(fun(Y, Wrks) ->
         lists:foldl(fun(X, WrkRow) ->
-            {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y),
+            %                                                           W    H   eps  module
+            {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y, 100, 100, 50, langton_ant),
             maps:put({X, Y}, Pid, WrkRow)
         end, Wrks, lists:seq(XBegin, XEnd))
     end, #{}, lists:seq(YBegin, YEnd)).
@@ -324,7 +325,7 @@ send_worker_neighbours({XBegin, XEnd}, {YBegin, YEnd}, Wrks) ->
                 Nbr = get_neighbour(X, Y, DX, DY, Width, Height),
                 [maps:get(Nbr, Wrks) | Acc]
             end, [], ?WORKER_NEIGHBOURS),
-            gen_server:cast(Wrk, {neighbours, Nbrs})
+            gen_server:cast(Wrk, {neighbours, lists:reverse(Nbrs)})
         end, lists:seq(XBegin, XEnd))
     end, lists:seq(YBegin, YEnd)).
 

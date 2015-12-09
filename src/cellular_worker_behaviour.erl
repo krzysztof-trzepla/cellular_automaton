@@ -21,8 +21,8 @@
 %% in order to initialize its state.
 %% @end
 %%--------------------------------------------------------------------
--callback init_step(Step :: cellular_worker:step(), State :: cellular_worker:state()) ->
-    NewState :: cellular_worker:state().
+-callback init_step(Step :: cellular_worker2:step(), State :: cellular_worker2:state()) ->
+    NewState :: cellular_worker2:state().
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -31,11 +31,11 @@
 %% @end
 %%--------------------------------------------------------------------
 -callback compute_next_state(
-    State :: cellular_worker:state(),
-    NbrsStates :: [{cellular_worker:neighbour_tag(), cellular_worker:state()}]
+    State :: cellular_worker2:state(),
+    NbrsStates :: [{cellular_worker2:neighbour_tag(), cellular_worker2:state()}]
 ) -> {
-    NextState :: cellular_worker:state(),
-    NextNbrsStates :: [{cellular_worker:neighbour_tag(), cellular_worker:state()}]
+    NextState :: cellular_worker2:state(),
+    NextNbrsStates :: [{cellular_worker2:neighbour_tag(), cellular_worker2:state()}]
 }.
 
 %%--------------------------------------------------------------------
@@ -45,11 +45,11 @@
 %% @end
 %%--------------------------------------------------------------------
 -callback merge_state(
-    NbrTag :: cellular_worker:neighbour_tag(),
-    State :: cellular_worker:state(),
-    NextState :: cellular_worker:state()
+    NbrTag :: cellular_worker2:neighbour_tag(),
+    State :: cellular_worker2:state(),
+    NextState :: cellular_worker2:state()
 ) ->
-    MergedState :: cellular_worker:state().
+    MergedState :: cellular_worker2:state().
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -63,12 +63,12 @@
 %% @end
 %%--------------------------------------------------------------------
 -callback merge_neighbour_state(
-    NbrTag :: cellular_worker:neighbour_tag(),
-    State :: cellular_worker:state(),
-    NbrState :: cellular_worker:state(),
-    NextState :: cellular_worker:state(),
-    NextNbrState :: cellular_worker:state()
+    NbrTag :: cellular_worker2:neighbour_tag(),
+    State :: cellular_worker2:state(),
+    NbrState :: cellular_worker2:state(),
+    NextState :: cellular_worker2:state(),
+    NextNbrState :: cellular_worker2:state()
 ) -> {
-    MergedState :: cellular_worker:state(),
-    MergedNbrState :: cellular_worker:state()
+    MergedState :: cellular_worker2:state(),
+    MergedNbrState :: cellular_worker2:state()
 }.

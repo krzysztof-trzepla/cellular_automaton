@@ -15,7 +15,7 @@
 -include("cellular_automaton.hrl").
 
 %% API
--export([start_link/0, start_cellular_worker/6, stop_cellular_worker/1]).
+-export([start_link/0, start_cellular_worker/7, stop_cellular_worker/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -41,10 +41,10 @@ start_link() ->
 %%--------------------------------------------------------------------
 -spec start_cellular_worker(X :: non_neg_integer(), Y :: non_neg_integer(),
     Width :: non_neg_integer(), Height :: non_neg_integer(),
-    Epsilon :: non_neg_integer(), Module :: module()) ->
+    Epsilon :: non_neg_integer(), Module :: module(), MaxSteps :: non_neg_integer()) ->
     supervisor:startchild_ret().
-start_cellular_worker(X, Y, Width, Height, Epsilon, Module) ->
-    supervisor:start_child(?CELLULAR_WORKER_SUP_NAME, [X, Y, Width, Height, Epsilon, Module]).
+start_cellular_worker(X, Y, Width, Height, Epsilon, Module, MaxSteps) ->
+    supervisor:start_child(?CELLULAR_WORKER_SUP_NAME, [X, Y, Width, Height, Epsilon, Module, MaxSteps]).
 
 %%--------------------------------------------------------------------
 %% @doc

@@ -31,7 +31,7 @@
     height :: non_neg_integer(),
     eps :: non_neg_integer(),
     module :: module(),
-    boards :: #{point() => #{point() => term()}},
+    boards = #{} :: #{point() => #{point() => term()}},
     board :: #{point() => term()},
     neighbours :: #{point() => pid()},
     last_refresh :: #{point() => non_neg_integer()},
@@ -81,7 +81,13 @@ run(Worker, Neighbours) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore.
 init([X, Y, Width, Height, Epsilon, Module, MaxSteps]) ->
-    Board = Module:init(Width, Height),
+    Board = maps:fold(
+        fun({DX, DY}, Stuff, Acc) ->
+            maps:put({X + DX, Y + DY}, Stuff, Acc)
+        end,
+        #{},
+        Module:init(Width, Height)),
+
     LastRefresh = maps:from_list(lists:zip(?WORKER_NEIGHBOURS,
         [-10000000000000 || _ <- lists:seq(1, length(?WORKER_NEIGHBOURS))])),
 
@@ -119,24 +125,32 @@ handle_call(Request, _From, State) ->
     {stop, Reason :: term(), NewState :: #state{}}.
 handle_cast({neighbours, Neighbours}, State) ->
     N = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, Neighbours)),
+
+    maps:fold(
+        fun({DX, DY}, Pid, _Acc) ->
+            gen_server:cast(Pid, {board, {-DX, -DY}, 0, State#state.board})
+        end,
+        undefined,
+        N),
+
     {noreply, State#state{neighbours = N}};
 
 handle_cast({board, Neighbour, AfterStep, Board}, State) ->
+%%    ?info("Neighbour: ~p, after step: ~p", [Neighbour, AfterStep]),
     LastRefresh = maps:put(Neighbour, AfterStep, State#state.last_refresh),
     Boards = maps:put(Neighbour, Board, State#state.boards),
-    NeedsSync = need_synchronization(State),
+    NewState = State#state{last_refresh = LastRefresh, boards = Boards},
+    NeedsSync = need_synchronization(NewState),
 
     gen_server:cast(self(), step),
 
-    {noreply, State#state{
-        last_refresh = LastRefresh,
-        boards = Boards,
-        needs_sync = NeedsSync}};
+    {noreply, NewState#state{needs_sync = NeedsSync}};
 
 handle_cast(step, #state{needs_sync = true} = State) ->
     {noreply, State};
 
 handle_cast(step, #state{steps_done = S, max_steps = S} = State) ->
+%%    ?info("Board: ~p", [State#state.board]),
     {noreply, State};
 
 handle_cast(step, #state{module = Module} = State) ->
@@ -145,6 +159,7 @@ handle_cast(step, #state{module = Module} = State) ->
     {MidBoard, NeighbourBoards} = split_board(NewMegaBoard, State),
 
     StepsDone = State#state.steps_done + 1,
+%%    ?info("Step ~p", [StepsDone]),
 
     maps:fold(
         fun({DX, DY}, Pid, _Acc) ->

@@ -81,7 +81,7 @@ merge_state(_NbrTag, State, _NextState) ->
 merge_neighbour_state(NbrTag, State, NbrState, NextState, NextNbrState) ->
     {
         merge_state(NbrTag, State, NextState),
-        merge_state(cellular_worker:inverse_neighbour_tag(NbrTag), NbrState, NextNbrState)
+        merge_state(cellular_worker2:inverse_neighbour_tag(NbrTag), NbrState, NextNbrState)
     }.
 
 %%%===================================================================

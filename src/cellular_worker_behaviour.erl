@@ -15,60 +15,16 @@
 %%% Behaviour callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% This callback is called by cellular worker before each step of simulation
-%% in order to initialize its state.
-%% @end
-%%--------------------------------------------------------------------
--callback init_step(Step :: cellular_worker:step(), State :: cellular_worker:state()) ->
-    NewState :: cellular_worker:state().
+-callback width() -> non_neg_integer().
 
-%%--------------------------------------------------------------------
-%% @doc
-%% This callback is called by cellular worker in order to compute its state
-%% it the next step along with states of neighbours seen from its perspective.
-%% @end
-%%--------------------------------------------------------------------
--callback compute_next_state(
-    State :: cellular_worker:state(),
-    NbrsStates :: [{cellular_worker:neighbour_tag(), cellular_worker:state()}]
-) -> {
-    NextState :: cellular_worker:state(),
-    NextNbrsStates :: [{cellular_worker:neighbour_tag(), cellular_worker:state()}]
-}.
+-callback height() -> non_neg_integer().
 
-%%--------------------------------------------------------------------
-%% @doc
-%% This callback is called by cellular worker whenever its state is about to
-%% change.
-%% @end
-%%--------------------------------------------------------------------
--callback merge_state(
-    NbrTag :: cellular_worker:neighbour_tag(),
-    State :: cellular_worker:state(),
-    NextState :: cellular_worker:state()
-) ->
-    MergedState :: cellular_worker:state().
+-callback border_width() -> non_neg_integer().
 
-%%--------------------------------------------------------------------
-%% @doc
-%% This callback is called by cellular worker in order to merge states
-%% between him and its neighbour. 'State' is equal to the current cellular worker
-%% state, 'NbrState' is equal to current neighbour state seen from its perspective,
-%% 'NextState' is equal to next cellular worker state seen from its neighbour 
-%% perspective and 'NextNbrState' is equal to the next state of cellular worker 
-%% neighbour seen from its neighbour perspective. Should return merged states
-%% of both cellular worker and its neighbour.
-%% @end
-%%--------------------------------------------------------------------
--callback merge_neighbour_state(
-    NbrTag :: cellular_worker:neighbour_tag(),
-    State :: cellular_worker:state(),
-    NbrState :: cellular_worker:state(),
-    NextState :: cellular_worker:state(),
-    NextNbrState :: cellular_worker:state()
-) -> {
-    MergedState :: cellular_worker:state(),
-    MergedNbrState :: cellular_worker:state()
-}.
+-callback border_height() -> non_neg_integer().
+
+-callback max_desynchronization() -> non_neg_integer().
+
+-callback init() -> term().
+
+-callback step(Board :: term()) -> NewBoard :: term().

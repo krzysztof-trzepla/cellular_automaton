@@ -132,13 +132,13 @@ handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoa
     neighbours_synchs = NbrsSynchs, max_desynch = MaxDesynch, module = Module,
     neighbours = Nbrs, width = Width, height = Height, border_width = BorderWidth,
     border_height = BorderHeight} = State) ->
-    case need_synchronization(Step, maps:values(NbrsSynchs), MaxDesynch) of
+    case need_synchronization(Step, NbrsSynchs, MaxDesynch) of
         true ->
             {noreply, State};
         false ->
             NbrsShifts = maps:keys(NbrsBoards),
             MergedBoard = merge_boards([Board | maps:values(NbrsBoards)]),
-            NewMergedBoard = Module:step(MergedBoard),
+            NewMergedBoard = Module:step(Step, MergedBoard),
             {NewBoard, NewNbrsBoards} = split_board(
                 NbrsShifts, NewMergedBoard, Width, Height, BorderWidth, BorderHeight
             ),
@@ -203,10 +203,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-need_synchronization(Step, LastSynchs, MaxDesynch) ->
+need_synchronization(Step, NbrsSynchs, MaxDesynch) ->
     lists:any(fun(LastSynch) ->
         Step - LastSynch > MaxDesynch
-    end, LastSynchs).
+    end, maps:values(NbrsSynchs)).
 
 merge_boards(Boards) ->
     lists:foldl(fun(Board, Acc) ->
@@ -245,8 +245,7 @@ split_inner_board(NbrsShifts, InnerBoard, Width, Height, BorderWidth, BorderHeig
             of
                 true ->
                     NewPos = shift({X, Y}, Shift, Width, Height),
-                    NewShift = shift(Shift, {-1, -1}, 1, 1),
-                    maps:put(NewShift, maps:put(NewPos, Value, Board), PartialBoards);
+                    maps:put(Shift, maps:put(NewPos, Value, Board), PartialBoards);
                 false ->
                     maps:put(Shift, Board, PartialBoards)
             end
@@ -254,12 +253,12 @@ split_inner_board(NbrsShifts, InnerBoard, Width, Height, BorderWidth, BorderHeig
     end, EmptyBoards, InnerBoard).
 
 
-invert_neighbour_shift({DX, DY}) ->
+invert_shift({DX, DY}) ->
     {-DX, -DY}.
 
 send_boards(Step, Nbrs, Boards) ->
     maps:fold(fun(NbrShift, NbrBoard, _) ->
-        NbrShiftInv = invert_neighbour_shift(NbrShift),
+        NbrShiftInv = invert_shift(NbrShift),
         gen_server:cast(maps:get(NbrShift, Nbrs), {neighbour_board, Step, NbrShiftInv, NbrBoard})
     end, undefined, Boards).
 

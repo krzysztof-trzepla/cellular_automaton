@@ -62,3 +62,4 @@ crashlytics-build.properties
 # OSX files
 .DS_Store
 
+data/*.txt

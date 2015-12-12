@@ -27,4 +27,4 @@
 
 -callback init() -> term().
 
--callback step(Board :: term()) -> NewBoard :: term().
+-callback step(Step :: non_neg_integer(), Board :: term()) -> NewBoard :: term().

@@ -16,7 +16,7 @@
 -include("cellular_logger.hrl").
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
     code_change/3]).
@@ -25,6 +25,7 @@
 -record(state, {
     x :: non_neg_integer(),
     y :: non_neg_integer(),
+    step :: non_neg_integer(),
     max_steps :: non_neg_integer(),
     max_desynch :: non_neg_integer(),
     width :: non_neg_integer(),
@@ -35,7 +36,8 @@
     neighbours :: term(),
     neighbours_boards :: term(),
     neighbours_synchs :: term(),
-    module :: module()
+    module :: module(),
+    notify :: pid()
 }).
 
 %%%===================================================================
@@ -48,11 +50,11 @@
 %% @end
 %%--------------------------------------------------------------------
 -spec start_link(X :: non_neg_integer(), Y :: non_neg_integer(),
-    MaxSteps :: non_neg_integer(), Module :: module()) ->
+    Module :: module(), MaxSteps :: non_neg_integer(), Notify :: pid()) ->
     {ok, Pid :: pid()} | ignore | {error, Reason :: term()}.
-start_link(X, Y, MaxSteps, Module) ->
-    ?info("Starting cellular worker (~p, ~p) for module ~p", [X, Y, Module]),
-    gen_server:start_link(?MODULE, [X, Y, MaxSteps, Module], []).
+start_link(X, Y, Module, MaxSteps, Notify) ->
+    ?debug("Starting cellular worker (~p, ~p) for module ~p", [X, Y, Module]),
+    gen_server:start_link(?MODULE, [X, Y, MaxSteps, Module, Notify], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -67,27 +69,26 @@ start_link(X, Y, MaxSteps, Module) ->
 -spec init(Args :: term()) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore.
-init([X, Y, MaxSteps, Module]) ->
-    Width = Module:width(),
-    Height = Module:height(),
-    Board = Module:init(),
-    case check_configuration(Board, Width, Height) of
-        ok ->
-            {ok, #state{
-                x = X,
-                y = Y,
-                max_steps = MaxSteps,
-                max_desynch = Module:max_desynchronization(),
-                width = Width,
-                height = Height,
-                border_width = Module:border_width(),
-                border_height = Module:border_height(),
-                board = Board,
-                module = Module
-            }};
-        {error, Reason} ->
-            {stop, Reason}
-    end.
+init([X, Y, MaxSteps, Module, Notify]) ->
+    NbrsNum = length(?WORKER_NEIGHBOURS),
+    NbrsBoards = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, #{}))),
+    NbrsSynchs = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, 0))),
+    {ok, #state{
+        x = X,
+        y = Y,
+        step = 0,
+        max_steps = MaxSteps,
+        max_desynch = Module:max_desynchronization(),
+        width = Module:width(),
+        height = Module:height(),
+        border_width = Module:border_width(),
+        border_height = Module:border_height(),
+        board = Module:init(),
+        module = Module,
+        notify = Notify,
+        neighbours_boards = NbrsBoards,
+        neighbours_synchs = NbrsSynchs
+    }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -117,22 +118,19 @@ handle_call(Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}.
-handle_cast({neighbours, Nbrs}, #state{} = State) ->
-    NbrsShifts = maps:keys(Nbrs),
-    NbrsNum = length(NbrsShifts),
-    NbrsBoards = maps:from_list(lists:zip(NbrsShifts, lists:duplicate(NbrsNum, #{}))),
-    NbrsSynchs = maps:from_list(lists:zip(NbrsShifts, lists:duplicate(NbrsNum, 0))),
-    gen_server:cast(self(), {step, 1}),
-    {noreply, State#state{
-        neighbours = Nbrs,
-        neighbours_boards = NbrsBoards,
-        neighbours_synchs = NbrsSynchs
-    }};
-handle_cast({step, Step}, #state{max_steps = MaxSteps} = State) when Step >= MaxSteps ->
+handle_cast({run_simulation, Nbrs}, #state{} = State) ->
+    gen_server:cast(self(), step),
+    {noreply, State#state{neighbours = Nbrs}};
+
+handle_cast(step, #state{neighbours = undefined} = State) ->
+    {noreply, State};
+
+handle_cast(step, #state{step = Step, max_steps = MaxSteps} = State) when Step >= MaxSteps ->
     {stop, normal, State};
-handle_cast({step, Step}, #state{board = Board, neighbours_boards = NbrsBoards,
+
+handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoards,
     neighbours_synchs = NbrsSynchs, max_desynch = MaxDesynch, module = Module,
-    width = Width, height = Height, border_width = BorderWidth,
+    neighbours = Nbrs, width = Width, height = Height, border_width = BorderWidth,
     border_height = BorderHeight} = State) ->
     case need_synchronization(Step, maps:values(NbrsSynchs), MaxDesynch) of
         true ->
@@ -144,16 +142,20 @@ handle_cast({step, Step}, #state{board = Board, neighbours_boards = NbrsBoards,
             {NewBoard, NewNbrsBoards} = split_board(
                 NbrsShifts, NewMergedBoard, Width, Height, BorderWidth, BorderHeight
             ),
-            send_board(Step, NewBoard),
-            gen_server:cast(self(), {step, Step + 1}),
-            {noreply, State#state{board = NewBoard, neighbours_boards = NewNbrsBoards}}
+            InnerBoards = split_inner_board(NbrsShifts, Board, Width, Height, BorderWidth, BorderHeight),
+            send_boards(Step, Nbrs, InnerBoards),
+            gen_server:cast(self(), step),
+            {noreply, State#state{step = Step + 1, board = NewBoard, neighbours_boards = NewNbrsBoards}}
     end;
+
 handle_cast({neighbour_board, Step, NbrShift, NbrBoard}, #state{
     neighbours_boards = NbrsBoards, neighbours_synchs = NbrsSynchs} = State) ->
+    gen_server:cast(self(), step),
     {noreply, State#state{
         neighbours_boards = maps:put(NbrShift, NbrBoard, NbrsBoards),
         neighbours_synchs = maps:put(NbrShift, Step, NbrsSynchs)
     }};
+
 handle_cast(Request, State) ->
     ?warning("Invalid request: ~p", [Request]),
     {noreply, State}.
@@ -183,8 +185,8 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 -spec terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term().
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #state{x = X, y = Y, notify = Notify}) ->
+    gen_server:cast(Notify, {worker_finished, {X, Y}}).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -200,21 +202,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-check_configuration(Board, _, _) when
-    not is_map(Board) ->
-    {error, "Board should be a map."};
-check_configuration(Board, Width, Height) ->
-    NewBoard = maps:filter(fun
-        ({X, Y}, _) -> X < 0 or X > Width or Y < 0 or Y > Height;
-        (_, _) -> true
-    end, Board),
-    case NewBoard of
-        #{} ->
-            ok;
-        _ ->
-            {error, "Board map keys should be coordinates that belong to the board."}
-    end.
 
 need_synchronization(Step, LastSynchs, MaxDesynch) ->
     lists:any(fun(LastSynch) ->
@@ -247,7 +234,35 @@ split_board(NbrsShifts, MergedBoard, Width, Height, BorderWidth, BorderHeight) -
     {NewBoard, NewNbrsBoards}.
 
 inside(X, Min, Max, Offset, Range, Shift) ->
-    max(Min, Shift * Range) =< X =< min(Max, Offset + Shift * Range).
+    (max(Min, Shift * Range) =< X) and (X =< min(Max, Offset + Shift * Range)).
 
-send_board(Step, NbrsShifts, NewBoard, Width, Height, BorderWidth, BorderHeight) ->
+split_inner_board(NbrsShifts, InnerBoard, Width, Height, BorderWidth, BorderHeight) ->
     EmptyBoards = maps:from_list(lists:zip(NbrsShifts, lists:duplicate(length(NbrsShifts), #{}))),
+    maps:fold(fun({X, Y}, Value, Boards) ->
+        maps:fold(fun({ShiftX, ShiftY} = Shift, Board, PartialBoards) ->
+            case inside(X, 0, Width, Width, Width - BorderWidth, ShiftX) and
+                inside(Y, 0, Height, Height, Height - BorderHeight, ShiftY)
+            of
+                true ->
+                    NewPos = shift({X, Y}, Shift, Width, Height),
+                    NewShift = shift(Shift, {-1, -1}, 1, 1),
+                    maps:put(NewShift, maps:put(NewPos, Value, Board), PartialBoards);
+                false ->
+                    maps:put(Shift, Board, PartialBoards)
+            end
+        end, #{}, Boards)
+    end, EmptyBoards, InnerBoard).
+
+
+invert_neighbour_shift({DX, DY}) ->
+    {-DX, -DY}.
+
+send_boards(Step, Nbrs, Boards) ->
+    maps:fold(fun(NbrShift, NbrBoard, _) ->
+        NbrShiftInv = invert_neighbour_shift(NbrShift),
+        gen_server:cast(maps:get(NbrShift, Nbrs), {neighbour_board, Step, NbrShiftInv, NbrBoard})
+    end, undefined, Boards).
+
+
+shift({X, Y}, {ShiftX, ShiftY}, DX, DY) ->
+    {X + ShiftX * DX, Y + ShiftY * DY}.

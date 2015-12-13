@@ -75,6 +75,10 @@ init([X, Y, MaxSteps, Module, Notify]) ->
     NbrsNum = length(?WORKER_NEIGHBOURS),
     NbrsBoards = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, #{}))),
     NbrsSynchs = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, 0))),
+    Ctx = case application:get_env(?APPLICATION_NAME, logging) of
+        {ok, true} -> #{fd => open_file(X, Y, Module)};
+        _ -> #{}
+    end,
     {ok, #state{
         x = X,
         y = Y,
@@ -90,7 +94,7 @@ init([X, Y, MaxSteps, Module, Notify]) ->
         notify = Notify,
         neighbours_boards = NbrsBoards,
         neighbours_synchs = NbrsSynchs,
-        ctx = #{fd => open_file(X, Y, Module)}
+        ctx = Ctx
     }}.
 
 %%--------------------------------------------------------------------
@@ -188,8 +192,11 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 -spec terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term().
-terminate(_Reason, #state{x = X, y = Y, notify = Notify, ctx = #{fd := Fd}}) ->
-    file:close(Fd),
+terminate(_Reason, #state{x = X, y = Y, notify = Notify, ctx = Ctx}) ->
+    case Ctx of
+        #{fd := Fd} -> file:close(Fd);
+        _ -> ok
+    end,
     gen_server:cast(Notify, {worker_finished, {X, Y}}).
 
 %%--------------------------------------------------------------------

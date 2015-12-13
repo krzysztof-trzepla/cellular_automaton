@@ -35,28 +35,27 @@ init() ->
     NodeName = "benchmark_" ++ integer_to_list(A, 32) ++ integer_to_list(B, 32)
         ++ integer_to_list(C, 32) ++ "@127.0.0.1",
     net_kernel:start([list_to_atom(NodeName), longnames]),
-    erlang:set_cookie(node(), ?COOKIE).
+    erlang:set_cookie(node(), ?COOKIE),
+    true = net_kernel:connect(?NODE).
 
 benchmark(ReportFile) ->
-    MaxSteps = 1000,
+    MaxSteps = 100,
     Timeout = 3600,
     report_header(ReportFile, MaxSteps, Timeout),
-    lists:foreach(fun(WorkersInRow) ->
-        lists:foreach(fun(WorkersInColumn) ->
-            lists:foreach(fun(MaxDesych) ->
-                lists:foreach(fun(AntNumber) ->
-                    benchmark(MaxSteps, WorkersInRow, WorkersInColumn, [
-                        {ant_number, AntNumber rem (WorkersInColumn * WorkersInRow)},
-                        {width, 1000},
-                        {height, 1000},
-                        {border_width, MaxDesych},
-                        {border_height, MaxDesych},
-                        {max_desynchronization, MaxDesych}
-                    ], Timeout, ReportFile)
-                end, [400, 1200, 2000, 4000])
-            end, [1, 2, 5, 10])
-        end, [1, 5, 10, 20])
-    end, [1, 5, 10, 20]).
+    lists:foreach(fun({WorkersInRow, WorkersInColumn}) ->
+        lists:foreach(fun(MaxDesych) ->
+            lists:foreach(fun(AntNumber) ->
+                benchmark(MaxSteps, WorkersInRow, WorkersInColumn, [
+                    {ant_number, AntNumber div (WorkersInColumn * WorkersInRow)},
+                    {width, 1000 div WorkersInRow},
+                    {height, 1000 div WorkersInColumn},
+                    {border_width, MaxDesych},
+                    {border_height, MaxDesych},
+                    {max_desynchronization, MaxDesych}
+                ], Timeout, ReportFile)
+            end, [16000])
+        end, [1, 5, 10])
+    end, [{1, 1}, {2, 2}, {4, 4}]).
 
 benchmark(MaxSteps, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->
     io:format("Benchmark case:\n", []),
@@ -65,8 +64,8 @@ benchmark(MaxSteps, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) 
     io:format("Config: ~p\n\n", [Config]),
     Self = self(),
     Start = os:timestamp(),
-    rpc:call(?NODE, application, set_env, [cellular_automaton, langton_ant, Config]),
-    rpc:call(?NODE, cellular_automaton, start_simulation, [langton_ant, MaxSteps, WorkersInRow, WorkersInColumn, Self]),
+    ok = rpc:call(?NODE, application, set_env, [cellular_automaton, langton_ant, Config]),
+    ok = rpc:call(?NODE, cellular_automaton, start_simulation, [langton_ant, MaxSteps, WorkersInRow, WorkersInColumn, Self]),
     Duration = receive
         simulation_finished -> timer:now_diff(os:timestamp(), Start)
     after

@@ -12,6 +12,7 @@
 -author("Krzysztof Trzepla").
 -behaviour(cellular_worker_behaviour).
 
+-include("cellular_automaton.hrl").
 -include("cellular_logger.hrl").
 
 %% Callbacks
@@ -24,20 +25,36 @@
 %%% Cellular worker behaviour callbacks
 %%%===================================================================
 
-width() -> 10.
+width() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    proplists:get_value(width, Config, 10).
 
-height() -> 10.
+height() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    proplists:get_value(height, Config, 10).
 
-border_width() -> 5.
+border_width() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    proplists:get_value(border_width, Config, 5).
 
-border_height() -> 5.
+border_height() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    proplists:get_value(border_height, Config, 5).
 
-max_desynchronization() -> 5.
+max_desynchronization() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    proplists:get_value(max_desynchronization, Config, 1).
 
-init() -> #{{5, 5} => #cell{ant = {1, 0}}}.
+init() ->
+    Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
+    AntNum = proplists:get_value(ant_number, Config, 1),
+    Width = width(),
+    Height = height(),
+    random:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
+    board(AntNum, Width, Height, #{}).
 
-step(_Step, Board) ->
-    % draw(Step, Board),
+step(Ctx, Board) ->
+    draw(Ctx#{draw => false}, Board),
     maps:fold(fun
         (Pos, #cell{color = black, ant = undefined}, NewBoard) ->
             Cell = maps:get(Pos, NewBoard, #cell{}),
@@ -70,10 +87,9 @@ rotate(white, {1, 0}) -> {0, 1}.
 swap_color(black) -> white;
 swap_color(white) -> black.
 
-draw(Step, Board) ->
-    Filename = filename:join("../../data", integer_to_list(Step) ++ ".txt"),
-    Header = <<"Step: ", (integer_to_binary(Step))/binary, "\n\n">>,
-    file:write_file(Filename, Header, [write]),
+draw(#{draw := true, step := Step, fd := Fd}, Board) ->
+    Header = <<"Step: ", (integer_to_binary(Step))/binary, "\n">>,
+    file:write(Fd, Header),
     lists:foreach(fun(Y) ->
         NewLine = lists:foldl(fun(X, Line) ->
             case maps:find({X, Y}, Board) of
@@ -85,5 +101,20 @@ draw(Step, Board) ->
                     <<Line/binary, ".">>
             end
         end, <<>>, lists:seq(-1, 11)),
-        file:write_file(Filename, <<NewLine/binary, "\n">>, [append])
-    end, lists:seq(11, -1, -1)).
+        file:write(Fd, <<NewLine/binary, "\n">>)
+    end, lists:seq(11, -1, -1));
+draw(_, _) ->
+    ok.
+
+board(AntNum, _, _, Board) when AntNum =< 0 ->
+    Board;
+board(AntNum, Width, Height, Board) ->
+    X = random:uniform(Width) - 1,
+    Y = random:uniform(Height) - 1,
+    Dir = lists:nth(random:uniform(4), [{0, 1}, {1, 0}, {0, -1}, {-1, 0}]),
+    case maps:find({X, Y}, Board) of
+        {ok, _} ->
+            board(AntNum, Width, Height, Board);
+        error ->
+            board(AntNum - 1, Width, Height, maps:put({X, Y}, #cell{ant = Dir}, Board))
+    end.

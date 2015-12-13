@@ -37,7 +37,8 @@
     neighbours_boards :: term(),
     neighbours_synchs :: term(),
     module :: module(),
-    notify :: pid()
+    notify :: pid(),
+    ctx :: #{}
 }).
 
 %%%===================================================================
@@ -70,6 +71,7 @@ start_link(X, Y, Module, MaxSteps, Notify) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore.
 init([X, Y, MaxSteps, Module, Notify]) ->
+    process_flag(trap_exit, true),
     NbrsNum = length(?WORKER_NEIGHBOURS),
     NbrsBoards = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, #{}))),
     NbrsSynchs = maps:from_list(lists:zip(?WORKER_NEIGHBOURS, lists:duplicate(NbrsNum, 0))),
@@ -87,7 +89,8 @@ init([X, Y, MaxSteps, Module, Notify]) ->
         module = Module,
         notify = Notify,
         neighbours_boards = NbrsBoards,
-        neighbours_synchs = NbrsSynchs
+        neighbours_synchs = NbrsSynchs,
+        ctx = #{fd => open_file(X, Y, Module)}
     }}.
 
 %%--------------------------------------------------------------------
@@ -131,14 +134,14 @@ handle_cast(step, #state{step = Step, max_steps = MaxSteps} = State) when Step >
 handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoards,
     neighbours_synchs = NbrsSynchs, max_desynch = MaxDesynch, module = Module,
     neighbours = Nbrs, width = Width, height = Height, border_width = BorderWidth,
-    border_height = BorderHeight} = State) ->
+    border_height = BorderHeight, ctx = Ctx} = State) ->
     case need_synchronization(Step, NbrsSynchs, MaxDesynch) of
         true ->
             {noreply, State};
         false ->
             NbrsShifts = maps:keys(NbrsBoards),
             MergedBoard = merge_boards([Board | maps:values(NbrsBoards)]),
-            NewMergedBoard = Module:step(Step, MergedBoard),
+            NewMergedBoard = Module:step(Ctx#{step => Step}, MergedBoard),
             {NewBoard, NewNbrsBoards} = split_board(
                 NbrsShifts, NewMergedBoard, Width, Height, BorderWidth, BorderHeight
             ),
@@ -185,7 +188,8 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 -spec terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term().
-terminate(_Reason, #state{x = X, y = Y, notify = Notify}) ->
+terminate(_Reason, #state{x = X, y = Y, notify = Notify, ctx = #{fd := Fd}}) ->
+    file:close(Fd),
     gen_server:cast(Notify, {worker_finished, {X, Y}}).
 
 %%--------------------------------------------------------------------
@@ -265,3 +269,10 @@ send_boards(Step, Nbrs, Boards) ->
 
 shift({X, Y}, {ShiftX, ShiftY}, DX, DY) ->
     {X + ShiftX * DX, Y + ShiftY * DY}.
+
+open_file(X, Y, Module) ->
+    Filename = string:join([atom_to_list(Module), integer_to_list(X), integer_to_list(Y)], "_"),
+    FileExt = ".dat",
+    File = filename:join([code:root_dir(), "data", Filename ++ FileExt]),
+    {ok, Fd} = file:open(File, [write, raw, delayed_write]),
+    Fd.

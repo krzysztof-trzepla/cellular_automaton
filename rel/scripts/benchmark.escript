@@ -53,9 +53,9 @@ benchmark(ReportFile) ->
                     {border_height, MaxDesych},
                     {max_desynchronization, MaxDesych}
                 ], Timeout, ReportFile)
-            end, [16000])
-        end, [1, 5, 10])
-    end, [{1, 1}, {2, 2}, {4, 4}]).
+            end, [1600])
+        end, [1, 2, 5, 10, 20, 50, 100])
+    end, [{2, 2}]).
 
 benchmark(MaxSteps, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->
     io:format("Benchmark case:\n", []),
@@ -76,7 +76,7 @@ benchmark(MaxSteps, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) 
 report_header(ReportFile, MaxSteps, Timeout) ->
     Header = <<"Max steps: ", (integer_to_binary(MaxSteps))/binary, "\n",
         "Max duration: ", (integer_to_binary(Timeout))/binary, " [s]\n\n",
-        "Workers in row [j],Workers in column [j],Ants number [j],Board width [j],"
+        "Workers [j],Workers in row [j],Workers in column [j],Ants number [j],Board width [j],"
         "Board height [j],Border width [j],Border height [j],Max desynchronization [j],"
         "Duration [us]\n">>,
     file:write_file(ReportFile, Header, [write]).
@@ -87,6 +87,7 @@ report_row(ReportFile, WorkersInRow, WorkersInColumn, Config, Duration) ->
         _ -> integer_to_binary(Duration)
     end,
     Row = <<
+        (integer_to_binary(WorkersInRow * WorkersInColumn))/binary, ",",
         (integer_to_binary(WorkersInRow))/binary, ",",
         (integer_to_binary(WorkersInColumn))/binary, ",",
         (integer_to_binary(proplists:get_value(ant_number, Config)))/binary, ",",

@@ -38,7 +38,8 @@
     neighbours_synchs :: term(),
     module :: module(),
     notify :: pid(),
-    ctx :: #{}
+    ctx :: #{},
+    need_synch = false :: boolean()
 }).
 
 %%%===================================================================
@@ -138,10 +139,10 @@ handle_cast(step, #state{step = Step, max_steps = MaxSteps} = State) when Step >
 handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoards,
     neighbours_synchs = NbrsSynchs, max_desynch = MaxDesynch, module = Module,
     neighbours = Nbrs, width = Width, height = Height, border_width = BorderWidth,
-    border_height = BorderHeight, ctx = Ctx} = State) ->
-    case need_synchronization(Step, NbrsSynchs, MaxDesynch) of
+    border_height = BorderHeight, ctx = Ctx, need_synch = NeedSynch} = State) ->
+    case NeedSynch or need_synchronization(Step, NbrsSynchs, MaxDesynch) of
         true ->
-            {noreply, State};
+            {noreply, State#state{need_synch = true}};
         false ->
             NbrsShifts = maps:keys(NbrsBoards),
             MergedBoard = merge_boards([Board | maps:values(NbrsBoards)]),
@@ -149,18 +150,34 @@ handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoa
             {NewBoard, NewNbrsBoards} = split_board(
                 NbrsShifts, NewMergedBoard, Width, Height, BorderWidth, BorderHeight
             ),
-            InnerBoards = split_inner_board(NbrsShifts, Board, Width, Height, BorderWidth, BorderHeight),
-            send_boards(Step, Nbrs, InnerBoards),
+            case Step rem MaxDesynch of
+                0 ->
+                    InnerBoards = split_inner_board(NbrsShifts, Board, Width, Height, BorderWidth, BorderHeight),
+                    send_boards(Step, Nbrs, InnerBoards);
+                _ ->
+                    ok
+            end,
             gen_server:cast(self(), step),
             {noreply, State#state{step = Step + 1, board = NewBoard, neighbours_boards = NewNbrsBoards}}
     end;
 
-handle_cast({neighbour_board, Step, NbrShift, NbrBoard}, #state{
-    neighbours_boards = NbrsBoards, neighbours_synchs = NbrsSynchs} = State) ->
-    gen_server:cast(self(), step),
+handle_cast({neighbour_board, NbrStep, NbrShift, NbrBoard}, #state{
+    neighbours_boards = NbrsBoards, neighbours_synchs = NbrsSynchs, need_synch =
+    NeedSynch, step = Step, max_desynch = MaxDesynch} = State) ->
+    NewNbrsBoards = maps:put(NbrShift, NbrBoard, NbrsBoards),
+    NewNbrsSynchs = maps:put(NbrShift, NbrStep, NbrsSynchs),
+    NewNeedSynch = case NeedSynch of
+        true -> need_synchronization(Step, NewNbrsSynchs, MaxDesynch);
+        false -> false
+    end,
+    case {NeedSynch, NewNeedSynch} of
+        {true, false} -> gen_server:cast(self(), step);
+        _ -> ok
+    end,
     {noreply, State#state{
-        neighbours_boards = maps:put(NbrShift, NbrBoard, NbrsBoards),
-        neighbours_synchs = maps:put(NbrShift, Step, NbrsSynchs)
+        need_synch = NewNeedSynch,
+        neighbours_boards = NewNbrsBoards,
+        neighbours_synchs = NewNbrsSynchs
     }};
 
 handle_cast(Request, State) ->

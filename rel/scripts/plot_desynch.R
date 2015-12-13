@@ -2,17 +2,17 @@
 
 Args <- commandArgs(trailingOnly = TRUE)
 Report <- Args[1]
-Cores <- Args[2]
+Core <- Args[2]
 
 Data <- read.csv(file=Report, sep=",", head=TRUE)
+Data <- structure(list(Data[1:5,10], Data[6:10,10], Data[11:15,10], Data[16:20,10],
+                      Data[21:25,10]), .Names = c(1, 2, 4, 8, 16), class = "data.frame",
+                      row.names = c(NA, -5L))
+Data <- round(Data / 1000)
 
-MaxDesynch <- Data[,9]
-Duration <- Data[,10] / 1000
-
-# Simulation duration against number of workers
-png(filename=sprintf("desynch_%s.png", Cores))
-plot(MaxDesynch, Duration, main="Simulation duration against maximal desynchronization",
-     xlab="Maximal desynchronization", ylab="Duration [ms]")
-lines(MaxDesynch, Duration)
+png(filename=sprintf("desynch_%score.png", Core))
+barplot(as.matrix(Data), main=sprintf("Simulation duration against number of workers (%s core)", Core),
+        xlab = "Number of workers", ylab = "Duration [ms]", beside=TRUE)
+legend("topright", legend = c(1, 5, 10, 20, 50), bty="n", fill=grey.colors(5), title="Max desynchronization")
 dev.off()
 

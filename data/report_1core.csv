@@ -1,0 +1,6 @@
+Workers [j],Workers in row [j],Workers in column [j],Ants number [j],Board width [j],Board height [j],Border width [j],Border height [j],Max desynchronization [j],Duration [us]
+1,1,1,1600,1000,1000,0,0,100,19303744
+2,1,2,800,1000,500,0,0,100,19162981
+4,2,2,400,500,500,0,0,100,19034826
+8,2,4,200,500,250,0,0,100,18882351
+16,4,4,100,250,250,0,0,100,18903574

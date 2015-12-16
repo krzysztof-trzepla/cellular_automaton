@@ -40,8 +40,8 @@ grow_all(Map) ->
         end, Map, Map
     ).
 
-grow(Map, Foram = #algae{energy = Energy}) ->
-    insert(Map, Foram#algae{energy = Energy + forams_config:algae_growth_rate()}).
+grow(Map, Algae = #algae{energy = Energy}) ->
+    insert(Map, Algae#algae{energy = Energy + forams_config:algae_growth_rate()}).
 
 reproduce_all(Map) ->
     maps:fold(

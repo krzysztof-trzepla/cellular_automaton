@@ -63,9 +63,10 @@ step(Ctx, Board) ->
 
 
 draw(#{step := Step, fd := Fd}, Board) ->
+    {Forams, Algaes} = foram:count(Board),
+    lager:info("~p,~p",[Forams, Algaes]),
     Header = <<"Step: ", (integer_to_binary(Step))/binary, "\n">>,
     file:write(Fd, Header),
-    {Forams, Algaes} = foram:count(Board),
     file:write(Fd, <<Forams/integer, ",", Algaes/integer, "\n">>);
 draw(_, _) ->
     ok.

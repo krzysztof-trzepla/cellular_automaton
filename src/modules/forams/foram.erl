@@ -31,8 +31,6 @@ insert(Map, Foram = #foram{coords = Coords, energy = Energy}) ->
     case maps:get(Coords, Map, undefined) of
         #algae{energy = OldEnergy} ->
             maps:put(Coords, Foram#foram{energy = OldEnergy + Energy}, Map);
-        #foram{} ->
-            Map;
         _ ->
             maps:put(Coords, Foram, Map)
     end.
@@ -52,7 +50,8 @@ move(Map, Foram = #foram{coords = Coords}) ->
         undefined ->
             Map;
         NewCoord ->
-            insert(Map, Foram#foram{coords = NewCoord})
+            Map2 = maps:remove(Coords, Map),
+            insert(Map2, Foram#foram{coords = NewCoord})
     end.
 
 reproduce_all(Map) ->

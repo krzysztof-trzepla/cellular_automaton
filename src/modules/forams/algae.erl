@@ -10,6 +10,7 @@
 -module(algae).
 -author("Tomasz Lichon").
 
+-include("cellular_logger.hrl").
 -include("modules/forams/algae.hrl").
 -include("modules/forams/foram.hrl").
 

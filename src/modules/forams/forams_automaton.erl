@@ -24,23 +24,23 @@
 %%%===================================================================
 
 width() ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(width, Config, 10).
 
 height() ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(height, Config, 10).
 
 border_width() ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(border_width, Config, 5).
 
 border_height() ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(border_height, Config, 5).
 
 max_desynchronization() ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(max_desynchronization, Config, 1).
 
 init() ->
@@ -64,9 +64,8 @@ step(Ctx, Board) ->
 
 draw(#{step := Step, fd := Fd}, Board) ->
     {Forams, Algaes} = foram:count(Board),
-    lager:info("~p,~p",[Forams, Algaes]),
     Header = <<"Step: ", (integer_to_binary(Step))/binary, "\n">>,
     file:write(Fd, Header),
-    file:write(Fd, <<Forams/integer, ",", Algaes/integer, "\n">>);
+    file:write(Fd, <<(integer_to_binary(Forams))/binary, ",", (integer_to_binary(Algaes))/binary, "\n">>);
 draw(_, _) ->
     ok.

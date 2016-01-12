@@ -54,7 +54,7 @@ init() ->
     board(AntNum, Width, Height, #{}).
 
 step(Ctx, Board) ->
-    draw(Ctx#{draw => false}, Board),
+    draw(Ctx#{draw => true}, Board),
     maps:fold(fun
         (Pos, #cell{color = black, ant = undefined}, NewBoard) ->
             Cell = maps:get(Pos, NewBoard, #cell{}),
@@ -88,6 +88,8 @@ swap_color(black) -> white;
 swap_color(white) -> black.
 
 draw(#{draw := true, step := Step, fd := Fd}, Board) ->
+    Width = width(),
+    Height = height(),
     Header = <<"Step: ", (integer_to_binary(Step))/binary, "\n">>,
     file:write(Fd, Header),
     lists:foreach(fun(Y) ->
@@ -100,9 +102,9 @@ draw(#{draw := true, step := Step, fd := Fd}, Board) ->
                 error ->
                     <<Line/binary, ".">>
             end
-        end, <<>>, lists:seq(-1, 11)),
+        end, <<>>, lists:seq(0, Width)),
         file:write(Fd, <<NewLine/binary, "\n">>)
-    end, lists:seq(11, -1, -1));
+    end, lists:seq(Height, 0, -1));
 draw(_, _) ->
     ok.
 

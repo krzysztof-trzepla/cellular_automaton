@@ -74,5 +74,5 @@ valid_moves() ->
 %%%===================================================================
 
 get_env(Name) ->
-    Config = application:get_env(?APPLICATION_NAME, forams, []),
+    Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(Name, Config).

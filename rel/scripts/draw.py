@@ -10,11 +10,11 @@ def draw(filename, begin, end):
     printing = False
     with open(filename) as f:
         for line in f:
-            if line.startswith('Step: {0}'.format(begin)):
+            if line.strip() == 'Step: {0}'.format(begin):
                 printing = True
                 sys.stdout.write(line)
                 continue
-            if line.startswith('Step: {0}'.format(end)):
+            if line.strip() == 'Step: {0}'.format(end):
                 break
             if printing:
                 if line.startswith('Step'):

@@ -5,6 +5,7 @@
 -define(COOKIE, 'cellular_automaton').
 -define(EXIT_SUCCESS, 0).
 -define(EXIT_FAILURE, 1).
+-define(CELLULAR_WORKER_MOD, forams_automaton).
 
 %% API
 -export([main/1]).
@@ -44,53 +45,55 @@ benchmark(ReportFile) ->
     report_header(ReportFile, MaxSteps, Timeout),
     lists:foreach(fun({WorkersInRow, WorkersInColumn}) ->
         lists:foreach(fun(MaxDesych) ->
-            lists:foreach(fun(AntNumber) ->
-                benchmark(MaxSteps, WorkersInRow, WorkersInColumn, [
-                    {ant_number, AntNumber div (WorkersInColumn * WorkersInRow)},
-                    {width, 1000 div WorkersInRow},
-                    {height, 1000 div WorkersInColumn},
+            lists:foreach(fun(Repeat) ->
+                Config = overwrite_config(?CELLULAR_WORKER_MOD, [
+                    {width, 192 div WorkersInRow},
+                    {height, 192 div WorkersInColumn},
                     {border_width, MaxDesych},
                     {border_height, MaxDesych},
                     {max_desynchronization, MaxDesych}
-                ], Timeout, ReportFile)
-            end, [1600])
-        end, [1, 2, 5, 10, 20, 50, 100])
-    end, [{2, 2}]).
+                ]),
+                benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile)
+            end, lists:seq(1, 30))
+        end, [1])%, 2, 5, 10, 20, 50])
+    end, [{1, 1}]).%, {2, 1}, {2, 2}, {3, 2}, {4, 2}, {4, 3}, {4, 4}, {6, 4}, {8, 4}, {6, 6}, {8, 6}, {8, 8}]).
 
-benchmark(MaxSteps, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->
+benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->
     io:format("Benchmark case:\n", []),
+    io:format("Repeat: ~p\n", [Repeat]),
     io:format("Worker in row: ~p\n", [WorkersInRow]),
     io:format("Worker in column: ~p\n", [WorkersInColumn]),
     io:format("Config: ~p\n\n", [Config]),
     Self = self(),
     Start = os:timestamp(),
-    ok = rpc:call(?NODE, application, set_env, [cellular_automaton, langton_ant, Config]),
-    ok = rpc:call(?NODE, cellular_automaton, start_simulation, [langton_ant, MaxSteps, WorkersInRow, WorkersInColumn, Self]),
+    ok = rpc:call(?NODE, application, set_env, [cellular_automaton, ?CELLULAR_WORKER_MOD, Config]),
+    ok = rpc:call(?NODE, cellular_automaton, start_simulation,
+        [?CELLULAR_WORKER_MOD, MaxSteps, WorkersInRow, WorkersInColumn, Self]),
     Duration = receive
         simulation_finished -> timer:now_diff(os:timestamp(), Start)
     after
         timer:seconds(Timeout) -> timeout
     end,
-    report_row(ReportFile, WorkersInRow, WorkersInColumn, Config, Duration).
+    report_row(ReportFile, Repeat, WorkersInRow, WorkersInColumn, Config, Duration).
 
 report_header(ReportFile, MaxSteps, Timeout) ->
     Header = <<"Max steps: ", (integer_to_binary(MaxSteps))/binary, "\n",
         "Max duration: ", (integer_to_binary(Timeout))/binary, " [s]\n\n",
-        "Workers [j],Workers in row [j],Workers in column [j],Ants number [j],Board width [j],"
+        "Repeat [j],Workers [j],Workers in row [j],Workers in column [j],Board width [j],"
         "Board height [j],Border width [j],Border height [j],Max desynchronization [j],"
         "Duration [us]\n">>,
     file:write_file(ReportFile, Header, [write]).
 
-report_row(ReportFile, WorkersInRow, WorkersInColumn, Config, Duration) ->
+report_row(ReportFile, Repeat, WorkersInRow, WorkersInColumn, Config, Duration) ->
     DurationBinary = case Duration of
         timeout -> <<"timeout">>;
         _ -> integer_to_binary(Duration)
     end,
     Row = <<
+        (integer_to_binary(Repeat))/binary, ",",
         (integer_to_binary(WorkersInRow * WorkersInColumn))/binary, ",",
         (integer_to_binary(WorkersInRow))/binary, ",",
         (integer_to_binary(WorkersInColumn))/binary, ",",
-        (integer_to_binary(proplists:get_value(ant_number, Config)))/binary, ",",
         (integer_to_binary(proplists:get_value(width, Config)))/binary, ",",
         (integer_to_binary(proplists:get_value(height, Config)))/binary, ",",
         (integer_to_binary(proplists:get_value(border_width, Config)))/binary, ",",
@@ -99,3 +102,11 @@ report_row(ReportFile, WorkersInRow, WorkersInColumn, Config, Duration) ->
         DurationBinary/binary, "\n"
     >>,
     file:write_file(ReportFile, Row, [append]).
+
+
+overwrite_config(Module, NewConfig) ->
+    AppConfig = rpc:call(?NODE, application, get_all_env, [cellular_automaton]),
+    {_, Config} = lists:keyfind(Module, 1, AppConfig),
+    lists:foldl(fun({Key, Value}, UpdatedConfig) ->
+        lists:keyreplace(Key, 1, UpdatedConfig, {Key, Value})
+    end, Config, NewConfig).

@@ -17,7 +17,7 @@
 
 %% Callbacks
 -export([width/0, height/0, border_width/0, border_height/0, max_desynchronization/0,
-    init/0, step/2]).
+    init/1, step/2]).
 
 %%%===================================================================
 %%% Cellular worker behaviour callbacks
@@ -43,19 +43,20 @@ max_desynchronization() ->
     Config = application:get_env(?APPLICATION_NAME, forams_automaton, []),
     proplists:get_value(max_desynchronization, Config, 1).
 
-init() ->
+init(Board) ->
     random:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    foram:init(algae:init(#{})).
+    algae:init(Board),
+    foram:init(Board).
 
 step(Ctx, Board) ->
     draw(Ctx, Board),
-    Board2 = foram:move_all(Board),
-    Board3 = foram:reproduce_all(Board2),
-    Board4 = foram:starve_all(Board3),
-    Board5 = foram:remove_dead(Board4),
-    Board6 = algae:grow_all(Board5),
-    Board7 = algae:reproduce_all(Board6),
-    algae:spawn_individuals(Board7).
+    foram:move_all(Board),
+    foram:reproduce_all(Board),
+    foram:starve_all(Board),
+    foram:remove_dead(Board),
+    algae:grow_all(Board),
+    algae:reproduce_all(Board),
+    algae:spawn_individuals(Board).
 
 %%%===================================================================
 %%% Internal functions

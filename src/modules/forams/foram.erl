@@ -20,93 +20,81 @@
 %%% API
 %%%===================================================================
 
-init(Map) ->
-    NumberOfForams = round(forams_config:foram_initial_generation_size()*
-        forams_config:width()* forams_config:height()),
+init(Board) ->
+    NumberOfForams = round(forams_config:foram_initial_generation_size() *
+        forams_config:width() * forams_config:height()),
     RandomForams = [random_foram() || _ <- lists:seq(1, NumberOfForams)],
     Forams = lists:usort(RandomForams),
-    lists:foldl(fun(Foram, M) -> foram:insert(M, Foram) end, Map, Forams).
+    lists:foreach(fun(Foram) -> foram:insert(Board, Foram) end, Forams).
 
-insert(Map, Foram = #foram{coords = Coords, energy = Energy}) ->
-    case maps:get(Coords, Map, undefined) of
-        #algae{energy = OldEnergy} ->
-            maps:put(Coords, Foram#foram{energy = OldEnergy + Energy}, Map);
+insert(Board, Foram = #foram{coords = Coords, energy = Energy}) ->
+    case cellular_board:find(Board, Coords) of
+        {ok, #algae{energy = OldEnergy}} ->
+            cellular_board:put(Board, Coords, Foram#foram{energy = OldEnergy + Energy});
         _ ->
-            maps:put(Coords, Foram, Map)
+            cellular_board:put(Board, Coords, Foram)
     end.
 
-move_all(Map) ->
-    maps:fold(
-        fun
-            (_, #foram{} = V, M) ->
-                move(M, V);
-            (_, _, M) ->
-                M
-        end, Map, Map
-    ).
+move_all(Board) ->
+    cellular_board:foreach(Board, fun
+        (_, #foram{} = V) -> move(Board, V);
+        (_, _) -> ok
+    end).
 
-move(Map, Foram = #foram{coords = Coords}) ->
-    case random_valid_move(Map, Coords) of
+move(Board, Foram = #foram{coords = Coords}) ->
+    case random_valid_move(Board, Coords) of
         undefined ->
-            Map;
+            ok;
         NewCoord ->
-            Map2 = maps:remove(Coords, Map),
-            insert(Map2, Foram#foram{coords = NewCoord})
+            cellular_board:delete(Board, Coords),
+            insert(Board, Foram#foram{coords = NewCoord})
     end.
 
-reproduce_all(Map) ->
-    maps:fold(
-        fun
-            (_, V = #foram{energy = Energy}, M)->
-                case Energy >= forams_config:foram_reproduction_limit() of
-                    true ->
-                        reproduce(M, V);
-                    false ->
-                        M
-                end;
-            (_, _, M) ->
-                M
-        end, Map, Map
-    ).
+reproduce_all(Board) ->
+    cellular_board:foreach(Board, fun
+        (_, V = #foram{energy = Energy}) ->
+            case Energy >= forams_config:foram_reproduction_limit() of
+                true ->
+                    reproduce(Board, V);
+                false ->
+                    ok
+            end;
+        (_, _) ->
+            ok
+    end).
 
-reproduce(Map, Foram = #foram{coords = Coords, energy = Energy}) ->
-    case random_valid_move(Map, Coords) of
+reproduce(Board, Foram = #foram{coords = Coords, energy = Energy}) ->
+    case random_valid_move(Board, Coords) of
         undefined ->
-            Map;
+            ok;
         NewCoord ->
-            Map2 = maps:put(Coords, Foram#foram{energy = Energy/2}, Map),
-            insert(Map2, Foram#foram{coords = NewCoord, energy = Energy/2})
+            cellular_board:put(Board, Coords, Foram#foram{energy = Energy / 2}),
+            insert(Board, Foram#foram{coords = NewCoord, energy = Energy / 2})
     end.
 
-starve_all(Map) ->
-    maps:fold(
-        fun
-            (_, #foram{} = V, M) ->
-                starve(M, V);
-            (_, _, M) ->
-                M
-        end, Map, Map
-    ).
+starve_all(Board) ->
+    cellular_board:foreach(Board, fun
+        (_, #foram{} = V) -> starve(Board, V);
+        (_, _) -> ok
+    end).
 
-starve(Map, Foram = #foram{coords = Coords, energy = Energy}) ->
-    maps:put(Coords, Foram#foram{energy = Energy - forams_config:foram_starvation_rate()}, Map).
+starve(Board, Foram = #foram{coords = Coords, energy = Energy}) ->
+    cellular_board:put(Board, Coords, Foram#foram{energy = Energy - forams_config:foram_starvation_rate()}).
 
-remove_dead(Map) ->
-    maps:fold(
-        fun
-            (Key, #foram{energy = Energy}, M) when Energy =< 0 ->
-                maps:remove(Key, M);
-            (_, _, M) ->
-                M
-        end, Map, Map).
+remove_dead(Board) ->
+    cellular_board:foreach(Board, fun
+        (Key, #foram{energy = Energy}) when Energy =< 0 ->
+            cellular_board:delete(Board, Key);
+        (_, _) -> ok
+    end).
 
-count(Map) ->
-    maps:fold(fun
+count(Board) ->
+    cellular_board:fold(Board, fun
         (_, #foram{}, {ForamNum, OthersNum}) ->
             {ForamNum + 1, OthersNum};
         (_, _, {ForamNum, OthersNum}) ->
             {ForamNum, OthersNum + 1}
-    end, {0, 0}, Map).
+    end, {0, 0}).
 
 %%%===================================================================
 %%% Internal functions
@@ -117,19 +105,19 @@ random_foram() ->
 
 random_valid_move(_, []) ->
     undefined;
-random_valid_move(Map, [Move | Rest]) ->
-    case is_valid_move(Map, Move) of
+random_valid_move(Board, [Move | Rest]) ->
+    case is_valid_move(Board, Move) of
         true ->
             Move;
         false ->
-            random_valid_move(Map, Rest)
+            random_valid_move(Board, Rest)
     end;
-random_valid_move(Map, {X,Y}) ->
+random_valid_move(Board, {X, Y}) ->
     DeltasOfMoves = utils:random_shuffle(forams_config:valid_moves()),
     Moves = [{X + DX, Y + DY} || {DX, DY} <- DeltasOfMoves],
-    random_valid_move(Map, Moves).
+    random_valid_move(Board, Moves).
 
-is_valid_move(Map, Coords = {X, Y})->
+is_valid_move(Board, Coords = {X, Y}) ->
     case (X < 0
         orelse X >= forams_config:width()
         orelse Y < 0
@@ -138,7 +126,7 @@ is_valid_move(Map, Coords = {X, Y})->
         true ->
             false;
         _ ->
-            case maps:find(Coords, Map) of
+            case cellular_board:find(Board, Coords) of
                 {ok, #foram{}} ->
                     false;
                 _ ->

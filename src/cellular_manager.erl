@@ -23,7 +23,8 @@
 
 -record(state, {
     notify :: pid(),
-    workers = #{} :: #{}
+    wrks = #{} :: #{},
+    wrks_boards = #{} :: #{}
 }).
 
 %%%===================================================================
@@ -87,20 +88,20 @@ handle_call(Request, _From, State) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}.
 handle_cast({run_simulation, Module, MaxSteps, XRange, YRange, Notify}, State) ->
-    Wrks = start_cellular_workers(Module, MaxSteps, XRange, YRange),
-    run_simulation(Wrks, XRange, YRange),
+    {Wrks, WrksBoards} = start_cellular_workers(Module, MaxSteps, XRange, YRange),
+    run_simulation(Wrks, WrksBoards, XRange, YRange),
     {noreply, State#state{
         notify = Notify,
-        workers = Wrks
+        wrks = Wrks
     }};
 
-handle_cast({worker_finished, {X, Y}}, #state{workers = Wrks, notify = Pid} = State) ->
+handle_cast({worker_finished, {X, Y}}, #state{wrks = Wrks, notify = Pid} = State) ->
     NewWrks = maps:remove({X, Y}, Wrks),
     case maps:size(NewWrks) == 0 of
         true -> Pid ! simulation_finished;
         false -> ok
     end,
-    {noreply, State#state{workers = NewWrks}};
+    {noreply, State#state{wrks = NewWrks}};
 
 handle_cast(Request, State) ->
     ?warning("Invalid request: ~p", [Request]),
@@ -150,20 +151,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 start_cellular_workers(Module, MaxSteps, {XBegin, XEnd}, {YBegin, YEnd}) ->
-    lists:foldl(fun(Y, Wrks) ->
-        lists:foldl(fun(X, WrkRow) ->
-            {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y, Module, MaxSteps, self()),
-            maps:put({X, Y}, Pid, WrkRow)
-        end, Wrks, lists:seq(XBegin, XEnd))
-    end, #{}, lists:seq(YBegin, YEnd)).
+    lists:foldl(fun(Y, {Wrks, WrksBoard}) ->
+        lists:foldl(fun(X, {WrkRow, WrkRowBoard}) ->
+            Bid = ets:new(board, [set, public]),
+            {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y, Bid, Module, MaxSteps, self()),
+            {maps:put({X, Y}, Pid, WrkRow), maps:put({X, Y}, Bid, WrkRowBoard)}
+        end, {Wrks, WrksBoard}, lists:seq(XBegin, XEnd))
+    end, {#{}, #{}}, lists:seq(YBegin, YEnd)).
 
-run_simulation(Wrks, {XBegin, XEnd}, {YBegin, YEnd}) ->
+run_simulation(Wrks, WrksBoards, {XBegin, XEnd}, {YBegin, YEnd}) ->
     Width = XEnd - XBegin + 1,
     Height = YEnd - YBegin + 1,
     maps:fold(fun({X, Y}, Wrk, _) ->
-        WrkNbrs = lists:foldl(fun({DX, DY}, Nbrs) ->
+        {WrkNbrs, WrkBids} = lists:foldl(fun({DX, DY}, {Nbrs, Bids}) ->
             NbrShift = {(X + DX + Width) rem Width, (Y + DY + Height) rem Height},
-            maps:put({DX, DY}, maps:get(NbrShift, Wrks), Nbrs)
-        end, #{}, ?WORKER_NEIGHBOURS),
-        gen_server:cast(Wrk, {run_simulation, WrkNbrs})
-    end, undefined, Wrks).
+            {
+                maps:put({DX, DY}, maps:get(NbrShift, Wrks), Nbrs),
+                maps:put({DX, DY}, maps:get(NbrShift, WrksBoards), Bids)
+            }
+        end, {#{}, #{}}, ?WORKER_NEIGHBOURS),
+        gen_server:cast(Wrk, {run_simulation, WrkNbrs, WrkBids})
+    end, ok, Wrks).

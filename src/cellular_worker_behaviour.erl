@@ -11,6 +11,8 @@
 -module(cellular_worker_behaviour).
 -author("Krzysztof Trzepla").
 
+-include("cellular_automaton.hrl").
+
 %%%===================================================================
 %%% Behaviour callbacks
 %%%===================================================================
@@ -25,6 +27,6 @@
 
 -callback max_desynchronization() -> non_neg_integer().
 
--callback init() -> term().
+-callback init(Board :: #board{}) -> any().
 
--callback step(Step :: non_neg_integer(), Board :: term()) -> NewBoard :: term().
+-callback step(Step :: non_neg_integer(), Board :: #board{}) -> any().

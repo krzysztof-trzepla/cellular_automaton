@@ -54,8 +54,8 @@ benchmark(ReportFile) ->
                     {max_desynchronization, MaxDesych}
                 ]),
                 benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile)
-            end, lists:seq(1, 30))
-        end, [1])%, 2, 5, 10, 20, 50])
+            end, lists:seq(1, 1))
+        end, [0])%, 2, 5, 10, 20, 50])
     end, [{1, 1}]).%, {2, 1}, {2, 2}, {3, 2}, {4, 2}, {4, 3}, {4, 4}, {6, 4}, {8, 4}, {6, 6}, {8, 6}, {8, 8}]).
 
 benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->

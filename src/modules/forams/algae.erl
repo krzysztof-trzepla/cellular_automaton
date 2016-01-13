@@ -20,67 +20,61 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-init(Map) ->
-    spawn_individuals(Map, forams_config:algae_initial_generation_size()).
+init(Board) ->
+    spawn_individuals(Board, forams_config:algae_initial_generation_size()).
 
-insert(Map, Algae = #algae{coords = Coords}) ->
-    case maps:get(Coords, Map, undefined) of
-        #foram{} ->
-            Map;
+insert(Board, Algae = #algae{coords = Coords}) ->
+    case cellular_board:find(Board, Coords) of
+        {ok, #foram{}} ->
+            ok;
         _ ->
-            maps:put(Coords, Algae, Map)
+            cellular_board:put(Board, Coords, Algae)
     end.
 
-grow_all(Map) ->
-    maps:fold(
-        fun
-            (_, #algae{} = V, M) ->
-                grow(M, V);
-            (_, _, M) ->
-                M
-        end, Map, Map
-    ).
+grow_all(Board) ->
+    cellular_board:foreach(Board, fun
+        (_, #algae{} = V) -> grow(Board, V);
+        (_, _) -> ok
+    end).
 
-grow(Map, Algae = #algae{energy = Energy}) ->
-    insert(Map, Algae#algae{energy = Energy + forams_config:algae_growth_rate()}).
+grow(Board, Algae = #algae{energy = Energy}) ->
+    insert(Board, Algae#algae{energy = Energy + forams_config:algae_growth_rate()}).
 
-reproduce_all(Map) ->
-    maps:fold(
-        fun
-            (_, V = #algae{energy = Energy}, M) ->
-                case Energy >= forams_config:algae_reproduction_limit() of
-                    true ->
-                        reproduce(M, V);
-                    false ->
-                        M
-                end;
-            (_, _, M) ->
-                M
-        end, Map, Map
-    ).
+reproduce_all(Board) ->
+    cellular_board:foreach(Board, fun
+        (_, V = #algae{energy = Energy}) ->
+            case Energy >= forams_config:algae_reproduction_limit() of
+                true ->
+                    reproduce(Board, V);
+                false ->
+                    ok
+            end;
+        (_, _) ->
+            ok
+    end).
 
-reproduce(Map, Algae = #algae{coords = Coords, energy = Energy}) ->
-    case random_valid_move(Map, Coords) of
+reproduce(Board, Algae = #algae{coords = Coords, energy = Energy}) ->
+    case random_valid_move(Board, Coords) of
         undefined ->
-            Map;
+            ok;
         NewCoord ->
-            Map2 = maps:put(Coords, Algae#algae{energy = Energy/2}, Map),
-            insert(Map2, Algae#algae{coords = NewCoord, energy = Energy/2})
+            cellular_board:put(Board, Coords, Algae#algae{energy = Energy / 2}),
+            insert(Board, Algae#algae{coords = NewCoord, energy = Energy / 2})
     end.
 
-spawn_individuals(Map) ->
-    spawn_individuals(Map, forams_config:algae_spawn_size()).
+spawn_individuals(Board) ->
+    spawn_individuals(Board, forams_config:algae_spawn_size()).
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-spawn_individuals(Map, Num) ->
+spawn_individuals(Board, Num) ->
     NumberOfAlgaes = round(Num *
         forams_config:width() * forams_config:height()),
     RandomAlgaes = [random_algae() || _ <- lists:seq(1, NumberOfAlgaes)],
     Algaes = lists:usort(RandomAlgaes),
-    lists:foldl(fun(Algae, M) -> algae:insert(M, Algae) end, Map, Algaes).
+    lists:foreach(fun(Algae) -> algae:insert(Board, Algae) end, Algaes).
 
 random_algae() ->
     #algae{coords = utils:random_coordinates(forams_config:width(),
@@ -88,19 +82,19 @@ random_algae() ->
 
 random_valid_move(_, []) ->
     undefined;
-random_valid_move(Map, [Move | Rest]) ->
-    case is_valid_move(Map, Move) of
+random_valid_move(Board, [Move | Rest]) ->
+    case is_valid_move(Board, Move) of
         true ->
             Move;
         false ->
-            random_valid_move(Map, Rest)
+            random_valid_move(Board, Rest)
     end;
-random_valid_move(Map, {X, Y}) ->
+random_valid_move(Board, {X, Y}) ->
     DeltasOfMoves = utils:random_shuffle(forams_config:valid_moves()),
     Moves = [{X + DX, Y + DY} || {DX, DY} <- DeltasOfMoves],
-    random_valid_move(Map, Moves).
+    random_valid_move(Board, Moves).
 
-is_valid_move(Map, Coords = {X, Y})->
+is_valid_move(Board, Coords = {X, Y}) ->
     case (X < 0
         orelse X >= forams_config:width()
         orelse Y < 0
@@ -108,7 +102,7 @@ is_valid_move(Map, Coords = {X, Y})->
     of
         true -> false;
         _ ->
-            case maps:find(Coords, Map) of
+            case cellular_board:find(Board, Coords) of
                 {ok, #foram{}} ->
                     false;
                 {ok, #algae{}} ->

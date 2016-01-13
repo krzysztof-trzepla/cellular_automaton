@@ -19,4 +19,14 @@
 -define(WORKER_NEIGHBOURS, [{0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1},
     {-1, 0}, {-1, 1}]).
 
+-record(board, {
+    x :: integer(),
+    y :: integer(),
+    w :: non_neg_integer(),
+    h :: non_neg_integer(),
+    dw :: non_neg_integer(),
+    dh :: non_neg_integer(),
+    ids :: #{{integer(), integer()} => ets:tid()}
+}).
+
 -endif.

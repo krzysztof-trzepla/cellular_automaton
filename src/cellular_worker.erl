@@ -149,12 +149,12 @@ handle_cast(step, #state{step = Step, board = Board, neighbours_boards = NbrsBoa
             {NewBoard, NewNbrsBoards} = split_board(
                 NbrsShifts, NewMergedBoard, Width, Height, BorderWidth, BorderHeight
             ),
-            case Step rem MaxDesynch of
-                0 ->
+            case (MaxDesynch == 0) orelse (Step rem MaxDesynch =/= 0) of
+                true ->
+                    ok;
+                false ->
                     InnerBoards = split_inner_board(NbrsShifts, Board, Width, Height, BorderWidth, BorderHeight),
-                    send_boards(Step, Nbrs, InnerBoards);
-                _ ->
-                    ok
+                    send_boards(Step, Nbrs, InnerBoards)
             end,
             gen_server:cast(self(), step),
             {noreply, State#state{step = Step + 1, board = NewBoard, neighbours_boards = NewNbrsBoards}}
@@ -230,6 +230,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+need_synchronization(_, _, 0) ->
+    false;
 need_synchronization(Step, NbrsSynchs, MaxDesynch) ->
     lists:any(fun(LastSynch) ->
         Step - LastSynch > MaxDesynch

@@ -40,23 +40,23 @@ init() ->
     true = net_kernel:connect(?NODE).
 
 benchmark(ReportFile) ->
-    MaxSteps = 2,
+    MaxSteps = 1,
     Timeout = 3600,
     report_header(ReportFile, MaxSteps, Timeout),
     lists:foreach(fun({WorkersInRow, WorkersInColumn}) ->
         lists:foreach(fun(MaxDesych) ->
             lists:foreach(fun(Repeat) ->
                 Config = overwrite_config(?CELLULAR_WORKER_MOD, [
-                    {width, 192 div WorkersInRow},
-                    {height, 192 div WorkersInColumn},
+                    {width, 10 div WorkersInRow},
+                    {height, 10 div WorkersInColumn},
                     {border_width, MaxDesych},
                     {border_height, MaxDesych},
                     {max_desynchronization, MaxDesych}
                 ]),
                 benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile)
             end, lists:seq(1, 1))
-        end, [200])%, 2, 5, 10, 20, 50])
-    end, [{2, 2}]).%, {2, 1}, {2, 2}, {3, 2}, {4, 2}, {4, 3}, {4, 4}, {6, 4}, {8, 4}, {6, 6}, {8, 6}, {8, 8}]).
+        end, [0])%, 2, 5, 10, 20, 50])
+    end, [{1, 1}]).%, {2, 1}, {2, 2}, {3, 2}, {4, 2}, {4, 3}, {4, 4}, {6, 4}, {8, 4}, {6, 6}, {8, 6}, {8, 8}]).
 
 benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, ReportFile) ->
     io:format("Benchmark case:\n", []),
@@ -65,12 +65,11 @@ benchmark(MaxSteps, Repeat, WorkersInRow, WorkersInColumn, Config, Timeout, Repo
     io:format("Worker in column: ~p\n", [WorkersInColumn]),
     io:format("Config: ~p\n\n", [Config]),
     Self = self(),
-    Start = os:timestamp(),
     ok = rpc:call(?NODE, application, set_env, [cellular_automaton, ?CELLULAR_WORKER_MOD, Config]),
     ok = rpc:call(?NODE, cellular_automaton, start_simulation,
         [?CELLULAR_WORKER_MOD, MaxSteps, WorkersInRow, WorkersInColumn, Self]),
     Duration = receive
-        simulation_finished -> timer:now_diff(os:timestamp(), Start)
+        {simulation_finished, Time} -> Time
     after
         timer:seconds(Timeout) -> timeout
     end,

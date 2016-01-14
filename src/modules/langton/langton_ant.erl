@@ -17,7 +17,7 @@
 
 %% Callbacks
 -export([width/0, height/0, border_width/0, border_height/0, max_desynchronization/0,
-    init/0, step/2]).
+    init/1, step/2]).
 
 -record(cell, {color = white, ant = undefined}).
 
@@ -45,30 +45,35 @@ max_desynchronization() ->
     Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
     proplists:get_value(max_desynchronization, Config, 1).
 
-init() ->
+init(Board) ->
     Config = application:get_env(?APPLICATION_NAME, langton_ant, []),
     AntNum = proplists:get_value(ant_number, Config, 1),
     Width = width(),
     Height = height(),
     random:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
-    board(AntNum, Width, Height, #{}).
+    board(Board, AntNum, Width, Height).
 
 step(Ctx, Board) ->
     draw(Ctx#{draw => true}, Board),
-    maps:fold(fun
-        (Pos, #cell{color = black, ant = undefined}, NewBoard) ->
-            Cell = maps:get(Pos, NewBoard, #cell{}),
-            maps:put(Pos, Cell#cell{color = black}, NewBoard);
-        ({X, Y}, #cell{color = Color, ant = Dir}, NewBoard) ->
+    cellular_board:foreach(Board, fun
+        (_, #cell{color = black, ant = undefined}) ->
+            ok;
+        (Pos, #cell{color = white, ant = undefined}) ->
+            cellular_board:delete(Board, Pos);
+        ({X, Y}, #cell{color = Color, ant = Dir}) ->
             {DX, DY} = NewDir = rotate(Color, Dir),
             NewPos = {X + DX, Y + DY},
-            Cell = maps:get(NewPos, NewBoard, #cell{}),
-            PartialBoard = maps:put(NewPos, Cell#cell{ant = NewDir}, NewBoard),
+            case cellular_board:find(Board, NewPos) of
+                {ok, Cell} ->
+                    cellular_board:put(Board, NewPos, Cell#cell{ant = NewDir});
+                {error, not_found} ->
+                    cellular_board:put(Board, NewPos, #cell{ant = NewDir})
+            end,
             case swap_color(Color) of
-                black -> maps:put({X, Y}, #cell{color = black}, PartialBoard);
-                white -> PartialBoard
+                black -> cellular_board:put(Board, {X, Y}, #cell{color = black});
+                white -> ok
             end
-    end, #{}, Board).
+    end).
 
 %%%===================================================================
 %%% Internal functions
@@ -94,12 +99,12 @@ draw(#{draw := true, step := Step, fd := Fd}, Board) ->
     file:write(Fd, Header),
     lists:foreach(fun(Y) ->
         NewLine = lists:foldl(fun(X, Line) ->
-            case maps:find({X, Y}, Board) of
+            case cellular_board:find(Board, {X, Y}) of
                 {ok, #cell{color = black, ant = undefined}} ->
                     <<Line/binary, "x">>;
                 {ok, #cell{}} ->
                     <<Line/binary, "o">>;
-                error ->
+                {error, not_found} ->
                     <<Line/binary, ".">>
             end
         end, <<>>, lists:seq(0, Width)),
@@ -108,15 +113,16 @@ draw(#{draw := true, step := Step, fd := Fd}, Board) ->
 draw(_, _) ->
     ok.
 
-board(AntNum, _, _, Board) when AntNum =< 0 ->
-    Board;
-board(AntNum, Width, Height, Board) ->
+board(_, AntNum, _, _) when AntNum =< 0 ->
+    ok;
+board(Board, AntNum, Width, Height) ->
     X = random:uniform(Width) - 1,
     Y = random:uniform(Height) - 1,
     Dir = lists:nth(random:uniform(4), [{0, 1}, {1, 0}, {0, -1}, {-1, 0}]),
-    case maps:find({X, Y}, Board) of
+    case cellular_board:find(Board, {X, Y}) of
         {ok, _} ->
-            board(AntNum, Width, Height, Board);
-        error ->
-            board(AntNum - 1, Width, Height, maps:put({X, Y}, #cell{ant = Dir}, Board))
+            board(Board, AntNum, Width, Height);
+        {error, not_found} ->
+            cellular_board:put(Board, {X, Y}, #cell{ant = Dir}),
+            board(Board, AntNum - 1, Width, Height)
     end.

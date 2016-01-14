@@ -24,7 +24,8 @@
 -record(state, {
     notify :: pid(),
     wrks = #{} :: #{},
-    wrks_boards = #{} :: #{}
+    wrks_boards = #{} :: #{},
+    start
 }).
 
 %%%===================================================================
@@ -89,16 +90,18 @@ handle_call(Request, _From, State) ->
     {stop, Reason :: term(), NewState :: #state{}}.
 handle_cast({run_simulation, Module, MaxSteps, XRange, YRange, Notify}, State) ->
     {Wrks, WrksBoards} = start_cellular_workers(Module, MaxSteps, XRange, YRange),
+    Start = os:timestamp(),
     run_simulation(Wrks, WrksBoards, XRange, YRange),
     {noreply, State#state{
         notify = Notify,
-        wrks = Wrks
+        wrks = Wrks,
+        start = Start
     }};
 
-handle_cast({worker_finished, {X, Y}}, #state{wrks = Wrks, notify = Pid} = State) ->
+handle_cast({worker_finished, {X, Y}}, #state{start = Start, wrks = Wrks, notify = Pid} = State) ->
     NewWrks = maps:remove({X, Y}, Wrks),
     case maps:size(NewWrks) == 0 of
-        true -> Pid ! simulation_finished;
+        true -> Pid ! {simulation_finished, timer:now_diff(os:timestamp(), Start)};
         false -> ok
     end,
     {noreply, State#state{wrks = NewWrks}};
@@ -153,7 +156,7 @@ code_change(_OldVsn, State, _Extra) ->
 start_cellular_workers(Module, MaxSteps, {XBegin, XEnd}, {YBegin, YEnd}) ->
     lists:foldl(fun(Y, {Wrks, WrksBoard}) ->
         lists:foldl(fun(X, {WrkRow, WrkRowBoard}) ->
-            Bid = ets:new(board, [set, public, {read_concurrency, true}, {write_concurrency, true}]),
+            Bid = ets:new(board, [set, public]),
             {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y, Bid, Module, MaxSteps, self()),
             {maps:put({X, Y}, Pid, WrkRow), maps:put({X, Y}, Bid, WrkRowBoard)}
         end, {Wrks, WrksBoard}, lists:seq(XBegin, XEnd))

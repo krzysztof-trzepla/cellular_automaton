@@ -74,6 +74,7 @@ init([X, Y, Bid, MaxSteps, Module, Notify]) ->
         dh = Module:border_height(),
         ids = #{{0, 0} => Bid}
     },
+    ?info("Worker ~p, board: ~p", [self(), Board]),
     NbrsStep = lists:foldl(fun(N, M) ->
         maps:put(N, 0, M)
     end, #{}, ?WORKER_NEIGHBOURS),
@@ -128,17 +129,19 @@ handle_cast({run_simulation, Nbrs, BIds}, #state{board = #board{ids = Ids} = B} 
 handle_cast(step, #state{step = Step, max_steps = MaxSteps} = State) when Step >= MaxSteps ->
     {stop, normal, State};
 
-handle_cast(step, #state{step = Step, board = Board, nbrs = Nbrs, nbrs_step = NbrsStep,
-    max_desynch = MaxDesynch, ctx = Ctx, need_synch = NeedSynch, module = Module} = State) ->
+handle_cast(step, #state{step = Step, board = Board, nbrs_step = NbrsStep,
+    max_desynch = MaxDesynch, need_synch = NeedSynch, module = Module, max_steps = MaxSteps} = State) ->
     case NeedSynch or need_synchronization(Step, NbrsStep, MaxDesynch) of
         true ->
             {noreply, State#state{need_synch = true}};
         false ->
-            Module:step(Ctx#{step => Step}, Board),
-            notify_neighbours(Step, Nbrs),
-            gen_server:cast(self(), step),
-            {noreply, State#state{step = Step + 1}}
+            Start = os:timestamp(),
+            ?info("simulate(Module, Step, MaxSteps, Board): ~p", [{Module, Step, MaxSteps, Board}]),
+            simulate(Module, Step, MaxSteps, Board),
+            ?info("Worker: ~p, duration: ~p", [self(), timer:now_diff(os:timestamp(), Start)]),
+            {stop, normal, State}
     end;
+
 handle_cast({neighbour_step, Nbr, Step}, #state{need_synch = false, nbrs_step = NbrsStep} = State) ->
     {noreply, State#state{nbrs_step = maps:put(Nbr, Step, NbrsStep)}};
 
@@ -211,17 +214,15 @@ need_synchronization(Step, NbrsStep, MaxDesynch) ->
         Step - NbrStep > MaxDesynch
     end, maps:values(NbrsStep)).
 
-notify_neighbours(Step, Nbrs) ->
-    maps:fold(fun(N, Pid, _) ->
-        gen_server:cast(Pid, {neighbour_step, invert_shift(N), Step})
-    end, ok, Nbrs).
-
-invert_shift({DX, DY}) ->
-    {-DX, -DY}.
-
 open_file(X, Y, Module) ->
     Filename = string:join([atom_to_list(Module), integer_to_list(X), integer_to_list(Y)], "_"),
     FileExt = ".dat",
     File = filename:join([code:root_dir(), "data", Filename ++ FileExt]),
     {ok, Fd} = file:open(File, [write, raw, delayed_write]),
     Fd.
+
+
+simulate(_, Step, Step, _) -> ok;
+simulate(Module, Step, MaxSteps, Board) ->
+    Module:step(#{step => Step}, Board),
+    simulate(Module, Step + 1, MaxSteps, Board).

@@ -89,7 +89,7 @@ normalize(X, Max) ->
     (X + Max) rem Max.
 
 
-foreach(F, MinX, MinY, MaxX, MaxY, Id, Dx, Dy) ->
+foreach(F, MinX, MinY, MaxX, MaxY, Dx, Dy, Id) ->
     foreach(fun(X) ->
         foreach(fun(Y) ->
             case ets:lookup(Id, {X, Y}) of
@@ -101,6 +101,6 @@ foreach(F, MinX, MinY, MaxX, MaxY, Id, Dx, Dy) ->
 
 foreach(_, Min, Max) when Min > Max ->
     ok;
-foreach(F, Min, Max) when Min > Max ->
+foreach(F, Min, Max) ->
     F(Min),
     foreach(F, Min + 1, Max).

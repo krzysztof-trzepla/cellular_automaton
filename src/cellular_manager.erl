@@ -153,7 +153,7 @@ code_change(_OldVsn, State, _Extra) ->
 start_cellular_workers(Module, MaxSteps, {XBegin, XEnd}, {YBegin, YEnd}) ->
     lists:foldl(fun(Y, {Wrks, WrksBoard}) ->
         lists:foldl(fun(X, {WrkRow, WrkRowBoard}) ->
-            Bid = ets:new(board, [set, public]),
+            Bid = ets:new(board, [set, public, {read_concurrency, true}, {write_concurrency, true}]),
             {ok, Pid} = cellular_worker_sup:start_cellular_worker(X, Y, Bid, Module, MaxSteps, self()),
             {maps:put({X, Y}, Pid, WrkRow), maps:put({X, Y}, Bid, WrkRowBoard)}
         end, {Wrks, WrksBoard}, lists:seq(XBegin, XEnd))
